@@ -132,8 +132,9 @@ Limits: group and display names 1–80 and 1–60 chars, bill title 200 chars (t
   references, so nothing exists in R2 that D1 does not know about.
 - One push subscription per user per browser: subscribing replaces that user's previous rows (browsers rotate the
   endpoint on every resubscribe), and endpoints answering `404`/`410` are deleted on the next send.
-- The group list shows a `myBalance` badge per group: `settled` when |balance| < 1000 ₫; otherwise the amount, unsigned
-  when positive and prefixed with `−` when negative. Positive is red (`--attention`), negative green (`--success`).
+- Balance display is from the viewer's side: `+22.500 ₫` means you must pay that much (red, `--attention`), `−30.000 ₫`
+  means you receive it (green, `--success`), and |balance| < 1000 ₫ shows `settled`. The API's `myBalance` keeps the raw
+  payer-credit sign (positive = others owe you), so the sign you see is the inverse of the number in JSON.
 - Bill cards: green border when you paid, red border when you are involved but did not pay, plain otherwise.
 - Bills that involve the signed-in viewer get a green border on all four sides (`--success`, defined in `:root`); details (names, images, payer) live
   in the card's Details dialog, and the card shows the participant count.
