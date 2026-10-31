@@ -134,7 +134,7 @@ Limits: group and display names 1–80 and 1–60 chars, bill title 200 chars (t
   endpoint on every resubscribe), and endpoints answering `404`/`410` are deleted on the next send.
 - The group list shows a `myBalance` badge per group: `settled` when |balance| < 1000 ₫; otherwise the amount, unsigned
   when positive and prefixed with `−` when negative. Positive is red (`--attention`), negative green (`--success`).
-- Bills that involve you use the same red accent (`--attention`).
+- Bill cards: green border when you paid, red border when you are involved but did not pay, plain otherwise.
 - Bills that involve the signed-in viewer get a green border on all four sides (`--success`, defined in `:root`); details (names, images, payer) live
   in the card's Details dialog, and the card shows the participant count.
 - Summary: each bill adds `amount` to the payer and subtracts the even split (leftover đồng to the first participants)

@@ -25,6 +25,7 @@
   a.group:hover { border-color: var(--muted); }
   a.group .muted { font-size: .85rem; }
   .card.mine { border: 2px solid var(--attention); }
+  .card.paid { border: 2px solid var(--success); }
   .badge { font-size: .75rem; padding: 2px 8px; border-radius: 99px; border: 1px solid currentColor; white-space: nowrap; }
   .badge.settled { color: var(--muted); }
   .badge.owe { color: var(--attention); }
@@ -385,7 +386,9 @@ async function viewGroup(id) {
 
   function billCard(b) {
     const involved = b.participants.includes(me);
-    return `<div class="card${involved ? " mine" : ""}">
+    // red: you are involved; green: you paid it (green wins when both apply)
+    const accent = b.paidBy === me ? " paid" : involved ? " mine" : "";
+    return `<div class="card${accent}">
       <div class="row" style="justify-content:space-between">
         <strong>${esc(b.title || "Bill")}</strong>
         <span class="money">${vnd(b.amount)}</span>
