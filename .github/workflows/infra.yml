@@ -12,4 +12,5 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
       - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
       - run: printf '%s' "https://bills.frostbun.com" | bunx wrangler secret put VAPID_SUBJECT
