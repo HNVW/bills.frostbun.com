@@ -57,6 +57,12 @@
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const vnd = (n) => Number(n).toLocaleString("vi-VN") + " ₫";
+// Vietnamese grouping uses dots; strip everything else so "100.000" -> 100000.
+const amountValue = (input) => Number(input.value.replace(/\D/g, ""));
+const formatAmount = (input) => {
+  const digits = input.value.replace(/\D/g, "").replace(/^0+(?=\d)/, "");
+  input.value = digits ? Number(digits).toLocaleString("vi-VN") : "";
+};
 const app = $("#app");
 
 async function api(path, opts = {}) {
@@ -263,7 +269,8 @@ async function viewGroup(id) {
         <button type="button" class="muted" data-close="bill-dialog">Close</button></div>
       <input type="hidden" name="id">
       <label>Description<input name="title" placeholder="Dinner" maxlength="200"></label>
-      <label>Amount (VND)<input name="amount" type="number" min="1" step="1" required></label>
+      <label>Amount (VND)<input name="amount" type="text" inputmode="numeric" autocomplete="off" placeholder="100.000" required>
+        <span class="muted hint" id="bill-amount-hint"></span></label>
       <label>Paid by<select name="paidBy">${members.map((m) => `<option value="${esc(m.email)}">${esc(m.name)}</option>`).join("")}</select></label>
       <fieldset class="checks"><legend>Involved</legend>
         ${members.map((m) => `<label class="check"><input type="checkbox" name="participants" value="${esc(m.email)}" checked> ${esc(m.name)}</label>`).join("")}
@@ -288,7 +295,8 @@ async function viewGroup(id) {
       <input type="hidden" name="id">
       <label>From<select name="from">${members.map((m) => `<option value="${esc(m.email)}">${esc(m.name)}</option>`).join("")}</select></label>
       <label>To<select name="to">${members.map((m) => `<option value="${esc(m.email)}">${esc(m.name)}</option>`).join("")}</select></label>
-      <label>Amount (VND)<input name="amount" type="number" min="1" step="1" required></label>
+      <label>Amount (VND)<input name="amount" type="text" inputmode="numeric" autocomplete="off" placeholder="100.000" required>
+        <span class="muted hint" id="pay-amount-hint"></span></label>
       <label>Images<input name="files" type="file" accept="image/*" multiple></label>
       <div class="thumbs" id="pay-thumbs"></div>
       <div class="row"><button>Save payment</button></div>
@@ -311,6 +319,14 @@ async function viewGroup(id) {
   }
 
   const billForm = $("#bill-form"), payForm = $("#pay-form");
+
+  for (const input of [billForm.elements.amount, payForm.elements.amount]) {
+    input.oninput = () => {
+      formatAmount(input);
+      const hint = $(input === billForm.elements.amount ? "#bill-amount-hint" : "#pay-amount-hint");
+      hint.textContent = input.value ? vnd(amountValue(input)) : "";
+    };
+  }
 
   const participantBoxes = () => [...billForm.querySelectorAll('input[name="participants"]')];
 
@@ -336,7 +352,7 @@ async function viewGroup(id) {
     try {
       const images = [...state.billImages, ...(await uploadFiles(id, f.elements.files.files))];
       const body = {
-        title: f.elements.title.value, amount: Number(f.elements.amount.value), paidBy: f.elements.paidBy.value,
+        title: f.elements.title.value, amount: amountValue(f.elements.amount), paidBy: f.elements.paidBy.value,
         participants, images,
       };
       if (f.elements.id.value) await api(`/api/groups/${id}/bills/${f.elements.id.value}`, { method: "PATCH", body: JSON.stringify(body) });
@@ -348,7 +364,7 @@ async function viewGroup(id) {
   function editBill(b) {
     billForm.elements.id.value = b.id;
     billForm.elements.title.value = b.title;
-    billForm.elements.amount.value = b.amount;
+    billForm.elements.amount.value = Number(b.amount).toLocaleString("vi-VN");
     billForm.elements.paidBy.value = b.paidBy;
     setParticipants(b.participants);
     state.billImages = [...b.images];
@@ -405,7 +421,7 @@ async function viewGroup(id) {
     const f = payForm;
     try {
       const images = [...state.payImages, ...(await uploadFiles(id, f.elements.files.files))];
-      const body = { from: f.elements.from.value, to: f.elements.to.value, amount: Number(f.elements.amount.value), images };
+      const body = { from: f.elements.from.value, to: f.elements.to.value, amount: amountValue(f.elements.amount), images };
       if (f.elements.id.value) await api(`/api/groups/${id}/payments/${f.elements.id.value}`, { method: "PATCH", body: JSON.stringify(body) });
       else await api(`/api/groups/${id}/payments`, { method: "POST", body: JSON.stringify(body) });
       render();
@@ -416,7 +432,7 @@ async function viewGroup(id) {
     payForm.elements.id.value = p.id;
     payForm.elements.from.value = p.from;
     payForm.elements.to.value = p.to;
-    payForm.elements.amount.value = p.amount;
+    payForm.elements.amount.value = Number(p.amount).toLocaleString("vi-VN");
     state.payImages = [...p.images];
     drawThumbs("pay");
     $("#pay-title").textContent = "Edit payment";
