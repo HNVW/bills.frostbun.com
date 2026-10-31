@@ -1,0 +1,539 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#18181b">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon-192.png" sizes="192x192">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<title>Shared Bills</title>
+<style>
+  :root { color-scheme: light dark; --muted: #888; --line: #8884; }
+  * { box-sizing: border-box; }
+  body { margin: 0 auto; max-width: 760px; padding: 16px; font: 15px/1.5 system-ui, sans-serif; }
+  h1, h2, h3 { margin: 0 0 8px; font-size: 1.15rem; }
+  h2 { font-size: 1rem; }
+  button { font: inherit; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--line); background: transparent; }
+  input, select, textarea { font: inherit; padding: 6px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit; width: 100%; }
+  form { display: grid; gap: 8px; margin: 8px 0; }
+  label { display: grid; gap: 4px; font-size: .85rem; color: var(--muted); }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .card { border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin: 8px 0; }
+  a.group { display: block; color: inherit; text-decoration: none; padding: 16px; font-size: 1.15rem; }
+  a.group strong { display: block; margin-bottom: 2px; }
+  a.group:hover { border-color: var(--muted); }
+  a.group .muted { font-size: .85rem; }
+  .muted { color: var(--muted); font-size: .85rem; }
+  .money { font-variant-numeric: tabular-nums; font-weight: 600; }
+  nav { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 12px; }
+  nav a { color: inherit; text-decoration: none; font-weight: 700; font-size: .95rem; }
+  ul { padding-left: 18px; margin: 4px 0; }
+  .thumbs { display: flex; gap: 6px; flex-wrap: wrap; }
+  .thumbs img { width: 64px; height: 64px; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); }
+  .thumbs figure { margin: 0; position: relative; }
+  .thumbs button { position: absolute; top: -6px; right: -6px; padding: 0 5px; border-radius: 50%; background: Canvas; }
+  .danger { color: #d33; }
+  .hidden { display: none !important; }
+  details { border: 1px solid var(--line); border-radius: 6px; padding: 8px; }
+  summary { cursor: pointer; }
+  dialog { border: 1px solid var(--line); border-radius: 8px; padding: 14px; width: min(92vw, 520px); background: Canvas; color: inherit; }
+  dialog::backdrop { background: #0006; }
+  dialog form { margin: 0; }
+  dialog img { max-width: 100%; border-radius: 6px; border: 1px solid var(--line); }
+</style>
+<nav><a href="/" id="home" title="All groups">Shared Bills</a><span class="row">
+  <button id="me" class="muted" title="Rename yourself"></button>
+  <button id="notify" class="muted" title="Notifications"></button>
+  <button id="logout" class="muted" title="Sign out of Cloudflare Access">Log out</button>
+</span></nav>
+<main id="app"></main>
+<script>
+const $ = (s, el = document) => el.querySelector(s);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+const vnd = (n) => Number(n).toLocaleString("vi-VN") + " ₫";
+const app = $("#app");
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, { headers: opts.body instanceof FormData ? {} : { "content-type": "application/json" }, ...opts });
+  if (res.status === 401) {
+    document.body.innerHTML = "<p style='padding:24px'>Not signed in. Cloudflare Access is required.</p>";
+    throw new Error("unauthenticated");
+  }
+  const data = res.status === 204 ? null : await res.json().catch(() => null);
+  if (!res.ok) throw new Error((data && data.error) || res.statusText);
+  return data;
+}
+
+function fail(err) {
+  alert(err.message || err);
+}
+
+async function uploadFiles(groupId, files) {
+  const keys = [];
+  for (const file of files) {
+    const fd = new FormData();
+    fd.append("file", file);
+    keys.push((await api(`/api/groups/${groupId}/images`, { method: "POST", body: fd })).key);
+  }
+  return keys;
+}
+
+/* ---------- notifications ---------- */
+
+const b64uToBytes = (s) => {
+  const pad = s.replace(/-/g, "+").replace(/_/g, "/");
+  return Uint8Array.from(atob(pad + "=".repeat((4 - (pad.length % 4)) % 4)), (c) => c.charCodeAt(0));
+};
+
+async function pushState() {
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) return "unsupported";
+  if (Notification.permission === "denied") return "blocked";
+  const reg = await navigator.serviceWorker.ready.catch(() => null);
+  if (!reg) return "unsupported";
+  const sub = await reg.pushManager.getSubscription();
+  return sub ? "on" : "off";
+}
+
+async function enablePush() {
+  const permission = await Notification.requestPermission();
+  if (permission !== "granted") return false;
+  const { publicKey } = await api("/api/push/key");
+  if (!publicKey) throw new Error("notifications are not configured");
+  const reg = await navigator.serviceWorker.ready;
+  const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64uToBytes(publicKey) });
+  await api("/api/push/subscribe", { method: "POST", body: JSON.stringify(sub.toJSON()) });
+  return true;
+}
+
+async function disablePush() {
+  const reg = await navigator.serviceWorker.ready;
+  const sub = await reg.pushManager.getSubscription();
+  if (!sub) return;
+  await api("/api/push/subscribe", { method: "DELETE", body: JSON.stringify({ endpoint: sub.endpoint }) }).catch(() => {});
+  await sub.unsubscribe();
+}
+
+async function togglePush() {
+  const state = await pushState().catch(() => "unsupported");
+  if (state === "unsupported") return alert("This browser cannot receive notifications.");
+  if (state === "blocked") return alert("Notifications are blocked in your browser settings.");
+  try {
+    if (state === "on") await disablePush();
+    else if (!(await enablePush())) return;
+    await paintNotify();
+  } catch (err) { fail(err); }
+}
+
+async function paintNotify() {
+  const btn = $("#notify");
+  if (!btn) return;
+  const state = await pushState().catch(() => "unsupported");
+  btn.textContent = state === "on" ? "🔔" : "🔕";
+  btn.title = state === "on" ? "Notifications on — click to turn off" : "Notifications off — click to turn on";
+  btn.disabled = state === "unsupported" || state === "blocked";
+  btn.onclick = togglePush;
+}
+
+/* ---------- self ---------- */
+
+async function renameSelf() {
+  const me = await api("/api/me").catch(() => null);
+  const name = prompt("Your display name", me?.name ?? "");
+  if (!name || !name.trim()) return;
+  try { await api("/api/me", { method: "PATCH", body: JSON.stringify({ name }) }); render(); }
+  catch (err) { fail(err); }
+}
+
+/* ---------- groups ---------- */
+
+async function viewGroups() {
+  const limit = 5;
+  let offset = 0, q = "", total = 0, groups = [];
+
+  const load = async () => {
+    const data = await api(`/api/groups?limit=${limit}&offset=${offset}${q ? `&q=${encodeURIComponent(q)}` : ""}`);
+    groups = data.groups;
+    total = data.total;
+    paint();
+  };
+
+  function paint() {
+    app.innerHTML = `
+      <div class="row" style="justify-content:space-between">
+        <h1 style="margin:0">Your groups</h1><button type="button" data-new-group="1">New group</button>
+      </div>
+      <form id="search"><input name="q" type="search" placeholder="Search groups" value="${esc(q)}"></form>
+      <dialog id="group-dialog">
+        <form id="new-group">
+          <div class="row" style="justify-content:space-between"><strong>New group</strong>
+            <button type="button" class="muted" data-close="group-dialog">Close</button></div>
+          <label>Name<input name="name" placeholder="Group name" required maxlength="80"></label>
+          <div class="row"><button>Create</button></div>
+        </form>
+      </dialog>
+      ${groups.length ? groups.map((g) => `
+        <a class="card group" href="/${g.id}">
+          <strong>${esc(g.name)}</strong>
+          <div class="muted">${g.memberCount} member${g.memberCount === 1 ? "" : "s"} · ${new Date(g.updatedAt).toLocaleDateString()}</div>
+        </a>`).join("")
+        : `<p class="muted">${q ? "No groups match." : "No groups yet."}</p>`}
+      ${total > limit ? `<div class="row" style="justify-content:space-between">
+        <button type="button" data-page="prev" ${offset === 0 ? "disabled" : ""}>← Newer</button>
+        <span class="muted">${offset + 1}–${Math.min(offset + limit, total)} of ${total}</span>
+        <button type="button" data-page="next" ${offset + limit >= total ? "disabled" : ""}>Older →</button>
+      </div>` : ""}`;
+
+    $("#search").onsubmit = (e) => { e.preventDefault(); q = e.target.elements.q.value.trim(); offset = 0; load(); };
+    $("#new-group").onsubmit = async (e) => {
+      e.preventDefault();
+      const name = e.target.elements.name.value.trim();
+      if (!name) return;
+      try { const g = await api("/api/groups", { method: "POST", body: JSON.stringify({ name }) }); location.href = `/${g.id}`; }
+      catch (err) { fail(err); }
+    };
+    app.onclick = async (e) => {
+      const t = e.target;
+      if (t.dataset.newGroup) { $("#new-group").reset(); $("#group-dialog").showModal(); }
+      else if (t.dataset.close) $("#" + t.dataset.close).close();
+      else if (t.dataset.page) {
+        offset = Math.max(0, t.dataset.page === "next" ? offset + limit : offset - limit);
+        await load();
+      }
+    };
+  }
+
+  await load();
+}
+
+/* ---------- group ---------- */
+
+async function viewGroup(id) {
+  const [group, bills, payments, summary] = await Promise.all([
+    api(`/api/groups/${id}`),
+    api(`/api/groups/${id}/bills`),
+    api(`/api/groups/${id}/payments`),
+    api(`/api/groups/${id}/summary`),
+  ]);
+  const members = group.members;
+  const nameOf = new Map(members.map((m) => [m.email, m.name]));
+  const who = (email) => nameOf.get(email) ?? email;
+  app.innerHTML = `
+    <div class="row" style="justify-content:space-between">
+      <h1 id="gname">${esc(group.name)}</h1>
+      <div class="row">
+        <button type="button" data-members="1">Members (${members.length})</button>
+        <button id="rename">Rename</button><button class="danger" id="del-group">Delete</button>
+      </div>
+    </div>
+
+    <dialog id="members-dialog">
+      <div class="row" style="justify-content:space-between"><strong>Members</strong>
+        <button type="button" class="muted" data-close="members-dialog">Close</button></div>
+      <ul>${members.map((m) => `<li>${esc(m.name)}${m.name === m.email ? "" : ` <span class="muted">${esc(m.email)}</span>`}</li>`).join("")}</ul>
+      <label>Invite link<input id="invite-link" readonly value="${esc(location.origin + "/join/" + group.inviteToken)}"></label>
+      <div class="row"><button type="button" id="copy-invite">Copy</button><button type="button" id="rotate-invite">Rotate link</button></div>
+      <p class="muted">Anyone signed in who opens this link joins the group. Rotating invalidates the old link.</p>
+      <form id="invite"><div class="row"><input name="email" type="email" placeholder="friend@example.com" required><button>Invite</button></div></form>
+    </dialog>
+
+    <h2 style="margin-top:16px">Summary</h2>
+    <div class="card">
+      <div>Total spent: <span class="money">${vnd(summary.totalSpent)}</span></div>
+      <ul>${summary.balances.map((b) => `<li>${esc(b.name)}: <span class="money">${b.balance >= 0 ? "+" : "−"}${vnd(Math.abs(b.balance))}</span></li>`).join("")}</ul>
+      ${summary.settlements.length ? `<strong>Settle up</strong>
+        <ul>${summary.settlements.map((s) => `<li>${esc(s.fromName)} → ${esc(s.toName)}: <span class="money">${vnd(s.amount)}</span></li>`).join("")}</ul>`
+        : '<p class="muted">All settled.</p>'}
+    </div>
+
+    <details open style="margin-top:16px">
+    <summary class="row" style="justify-content:space-between">
+      <h2 style="margin:0">Bills <span class="muted">(${bills.length})</span></h2>
+      <button type="button" data-new-bill="1">Add bill</button>
+    </summary>
+    <dialog id="bill-dialog">
+    <form id="bill-form">
+      <div class="row" style="justify-content:space-between"><strong id="bill-title">Add bill</strong>
+        <button type="button" class="muted" data-close="bill-dialog">Close</button></div>
+      <input type="hidden" name="id">
+      <label>Description<input name="title" placeholder="Dinner" maxlength="200"></label>
+      <label>Amount (VND)<input name="amount" type="number" min="1" step="1" required></label>
+      <label>Paid by<select name="paidBy">${members.map((m) => `<option value="${esc(m.email)}">${esc(m.name)}</option>`).join("")}</select></label>
+      <label>Involved<select name="participants" multiple size="${Math.min(members.length, 5)}">${members.map((m) => `<option value="${esc(m.email)}" selected>${esc(m.name)}</option>`).join("")}</select></label>
+      <label>Images<input name="files" type="file" accept="image/*" multiple></label>
+      <div class="thumbs" id="bill-thumbs"></div>
+      <div class="row"><button>Save bill</button></div>
+    </form>
+    </dialog>
+    ${bills.length ? bills.map((b) => billCard(b)).join("") : '<p class="muted">No bills yet.</p>'}
+    </details>
+
+    <details open style="margin-top:8px">
+    <summary class="row" style="justify-content:space-between">
+      <h2 style="margin:0">Payments <span class="muted">(${payments.length})</span></h2>
+      <button type="button" data-new-pay="1">Add payment</button>
+    </summary>
+    <dialog id="pay-dialog">
+    <form id="pay-form">
+      <div class="row" style="justify-content:space-between"><strong id="pay-title">Add payment</strong>
+        <button type="button" class="muted" data-close="pay-dialog">Close</button></div>
+      <input type="hidden" name="id">
+      <label>From<select name="from">${members.map((m) => `<option value="${esc(m.email)}">${esc(m.name)}</option>`).join("")}</select></label>
+      <label>To<select name="to">${members.map((m) => `<option value="${esc(m.email)}">${esc(m.name)}</option>`).join("")}</select></label>
+      <label>Amount (VND)<input name="amount" type="number" min="1" step="1" required></label>
+      <label>Images<input name="files" type="file" accept="image/*" multiple></label>
+      <div class="thumbs" id="pay-thumbs"></div>
+      <div class="row"><button>Save payment</button></div>
+    </form>
+    </dialog>
+    ${payments.length ? payments.map((p) => paymentCard(p)).join("") : '<p class="muted">No payments yet.</p>'}
+    </details>
+    <dialog id="detail-dialog">
+      <div class="row" style="justify-content:space-between"><strong id="detail-title"></strong>
+        <button type="button" class="muted" data-close="detail-dialog">Close</button></div>
+      <div id="detail-body" style="display:grid;gap:8px"></div>
+    </dialog>
+`;
+
+  const thumbsHTML = (imgs) => imgs.map((k) => `<figure><img src="/img/${k}" alt=""><button data-remove="${esc(k)}" title="Remove">×</button></figure>`).join("");
+  const state = { billImages: [], payImages: [] };
+
+  function drawThumbs(which) {
+    $(`#${which === "bill" ? "bill" : "pay"}-thumbs`).innerHTML = thumbsHTML(state[`${which}Images`]);
+  }
+
+  const billForm = $("#bill-form"), payForm = $("#pay-form");
+
+  function setSelect(el, values) {
+    for (const o of el.options) o.selected = values.includes(o.value);
+  }
+
+  function resetBill() {
+    billForm.reset();
+    billForm.elements.id.value = "";
+    $("#bill-title").textContent = "Add bill";
+    setSelect(billForm.participants, members.map((m) => m.email));
+    state.billImages = [];
+    drawThumbs("bill");
+    $("#bill-dialog").showModal();
+  }
+
+  billForm.onsubmit = async (e) => {
+    e.preventDefault();
+    const f = billForm;
+    try {
+      const images = [...state.billImages, ...(await uploadFiles(id, f.elements.files.files))];
+      const body = {
+        title: f.elements.title.value, amount: Number(f.elements.amount.value), paidBy: f.elements.paidBy.value,
+        participants: [...f.elements.participants.selectedOptions].map((o) => o.value), images,
+      };
+      if (f.elements.id.value) await api(`/api/groups/${id}/bills/${f.elements.id.value}`, { method: "PATCH", body: JSON.stringify(body) });
+      else await api(`/api/groups/${id}/bills`, { method: "POST", body: JSON.stringify(body) });
+      render();
+    } catch (err) { fail(err); }
+  };
+
+  function editBill(b) {
+    billForm.elements.id.value = b.id;
+    billForm.elements.title.value = b.title;
+    billForm.elements.amount.value = b.amount;
+    billForm.elements.paidBy.value = b.paidBy;
+    setSelect(billForm.participants, b.participants);
+    state.billImages = [...b.images];
+    drawThumbs("bill");
+    $("#bill-title").textContent = "Edit bill";
+    $("#bill-dialog").showModal();
+  }
+
+  function billCard(b) {
+    return `<div class="card">
+      <div class="row" style="justify-content:space-between">
+        <strong>${esc(b.title || "Bill")}</strong><span class="money">${vnd(b.amount)}</span>
+      </div>
+      <div class="muted">${esc(who(b.paidBy))} paid · ${new Date(b.createdAt).toLocaleDateString()}</div>
+      <div class="row"><button data-details-bill="${b.id}">Details</button><button data-edit-bill="${b.id}">Edit</button><button class="danger" data-del-bill="${b.id}">Delete</button></div>
+    </div>`;
+  }
+
+  function paymentCard(p) {
+    return `<div class="card">
+      <div class="row" style="justify-content:space-between">
+        <strong>${esc(who(p.from))} → ${esc(who(p.to))}</strong><span class="money">${vnd(p.amount)}</span>
+      </div>
+      <div class="muted">${new Date(p.createdAt).toLocaleDateString()}</div>
+      <div class="row"><button data-details-pay="${p.id}">Details</button><button data-edit-pay="${p.id}">Edit</button><button class="danger" data-del-pay="${p.id}">Delete</button></div>
+    </div>`;
+  }
+
+
+
+  function showDetails(title, lines, images) {
+    $("#detail-title").textContent = title;
+    $("#detail-body").innerHTML =
+      lines.map((l) => `<div>${l}</div>`).join("") +
+      (images.length
+        ? `<div class="thumbs">${images.map((k) => `<a href="/img/${k}" target="_blank" rel="noopener"><img src="/img/${k}" alt=""></a>`).join("")}</div>`
+        : '<p class="muted">No images.</p>');
+    $("#detail-dialog").showModal();
+  }
+
+  function resetPay() {
+    payForm.reset();
+    payForm.elements.id.value = "";
+    $("#pay-title").textContent = "Add payment";
+    state.payImages = [];
+    drawThumbs("pay");
+    $("#pay-dialog").showModal();
+  }
+
+  payForm.onsubmit = async (e) => {
+    e.preventDefault();
+    const f = payForm;
+    try {
+      const images = [...state.payImages, ...(await uploadFiles(id, f.elements.files.files))];
+      const body = { from: f.elements.from.value, to: f.elements.to.value, amount: Number(f.elements.amount.value), images };
+      if (f.elements.id.value) await api(`/api/groups/${id}/payments/${f.elements.id.value}`, { method: "PATCH", body: JSON.stringify(body) });
+      else await api(`/api/groups/${id}/payments`, { method: "POST", body: JSON.stringify(body) });
+      render();
+    } catch (err) { fail(err); }
+  };
+
+  function editPay(p) {
+    payForm.elements.id.value = p.id;
+    payForm.elements.from.value = p.from;
+    payForm.elements.to.value = p.to;
+    payForm.elements.amount.value = p.amount;
+    state.payImages = [...p.images];
+    drawThumbs("pay");
+    $("#pay-title").textContent = "Edit payment";
+    $("#pay-dialog").showModal();
+  }
+
+  app.onclick = async (e) => {
+    const t = e.target;
+    try {
+      if (t.dataset.detailsBill) {
+        const b = bills.find((x) => x.id === t.dataset.detailsBill);
+        showDetails(b.title || "Bill", [
+          `Amount: <span class="money">${vnd(b.amount)}</span>`,
+          `Paid by: ${esc(who(b.paidBy))}`,
+          `Involved (${b.participants.length}): ${b.participants.map((e) => esc(who(e))).join(", ")}`,
+          `<span class="muted">${new Date(b.createdAt).toLocaleString()}</span>`,
+        ], b.images);
+      } else if (t.dataset.detailsPay) {
+        const p = payments.find((x) => x.id === t.dataset.detailsPay);
+        showDetails(`${who(p.from)} → ${who(p.to)}`, [
+          `Amount: <span class="money">${vnd(p.amount)}</span>`,
+          `<span class="muted">${new Date(p.createdAt).toLocaleString()}</span>`,
+        ], p.images);
+      } else if (t.dataset.members) $("#members-dialog").showModal();
+      else if (t.dataset.newBill) { t.closest("details").open = true; resetBill(); }
+      else if (t.dataset.newPay) { t.closest("details").open = true; resetPay(); }
+      else if (t.dataset.close) $("#" + t.dataset.close).close();
+      else if (t.dataset.remove) {
+        if (state.billImages.includes(t.dataset.remove)) { state.billImages = state.billImages.filter((k) => k !== t.dataset.remove); drawThumbs("bill"); }
+        else { state.payImages = state.payImages.filter((k) => k !== t.dataset.remove); drawThumbs("pay"); }
+      } else if (t.dataset.editBill) editBill(bills.find((b) => b.id === t.dataset.editBill));
+      else if (t.dataset.editPay) editPay(payments.find((p) => p.id === t.dataset.editPay));
+      else if (t.dataset.delBill) {
+        if (!confirm("Delete this bill?")) return;
+        await api(`/api/groups/${id}/bills/${t.dataset.delBill}`, { method: "DELETE" });
+        render();
+      } else if (t.dataset.delPay) {
+        if (!confirm("Delete this payment?")) return;
+        await api(`/api/groups/${id}/payments/${t.dataset.delPay}`, { method: "DELETE" });
+        render();
+      }
+    } catch (err) { fail(err); }
+  };
+
+  const linkInput = $("#invite-link");
+  $("#copy-invite").onclick = async () => {
+    try { await navigator.clipboard.writeText(linkInput.value); }
+    catch { linkInput.select(); document.execCommand("copy"); }
+    const btn = $("#copy-invite");
+    if (!btn) return;
+    btn.textContent = "Copied";
+    setTimeout(() => { if (btn.isConnected) btn.textContent = "Copy"; }, 1200);
+  };
+
+  $("#rotate-invite").onclick = async () => {
+    try {
+      const { inviteToken } = await api(`/api/groups/${id}/invite`, { method: "POST" });
+      linkInput.value = `${location.origin}/join/${inviteToken}`;
+    } catch (err) { fail(err); }
+  };
+
+  $("#invite").onsubmit = async (e) => {
+    e.preventDefault();
+    try {
+      await api(`/api/groups/${id}/members`, { method: "POST", body: JSON.stringify({ email: e.target.elements.email.value }) });
+      render();
+    } catch (err) { fail(err); }
+  };
+
+  $("#rename").onclick = async () => {
+    const name = prompt("Group name", group.name);
+    if (!name || !name.trim()) return;
+    try { await api(`/api/groups/${id}`, { method: "PATCH", body: JSON.stringify({ name }) }); render(); }
+    catch (err) { fail(err); }
+  };
+
+  $("#del-group").onclick = async () => {
+    if (!confirm(`Delete "${group.name}" and everything in it?`)) return;
+    try { await api(`/api/groups/${id}`, { method: "DELETE" }); location.href = "/"; }
+    catch (err) { fail(err); }
+  };
+}
+
+/* ---------- router ---------- */
+
+let meName = "";
+
+function bindNav() {
+  $("#me").textContent = meName;
+  $("#logout").onclick = () => { location.href = "/cdn-cgi/access/logout"; };
+  $("#me").onclick = renameSelf;
+  paintNotify();
+  $("#home").onclick = (e) => {
+    e.preventDefault();
+    if (location.pathname === "/") render();
+    else { location.href = "/"; }
+  };
+}
+
+async function joinGroup(token) {
+  app.innerHTML = '<p class="muted">Joining…</p>';
+  try {
+    const g = await api(`/api/join/${encodeURIComponent(token)}`, { method: "POST" });
+    location.href = `/${g.id}`;
+  } catch (err) {
+    app.innerHTML = `<p class="danger">${esc(err.message)}</p><p><a href="/">← groups</a></p>`;
+  }
+}
+
+async function render() {
+  const join = /^\/join\/([0-9a-fA-F-]{36})\/?$/.exec(location.pathname);
+  if (join) { bindNav(); return joinGroup(join[1]); }
+  const m = /^\/([0-9a-f-]{36})\/?$/.exec(location.pathname);
+  api("/api/me")
+    .then((me) => { meName = me.name; $("#me").textContent = me.name; })
+    .catch(() => {});
+  bindNav();
+  app.innerHTML = '<p class="muted">Loading…</p>';
+  try {
+    if (m) await viewGroup(m[1]);
+    else await viewGroups();
+  } catch (err) {
+    if (err.message !== "unauthenticated") app.innerHTML = `<p class="danger">${esc(err.message)}</p>`;
+  }
+}
+
+window.addEventListener("popstate", render);
+render();
+
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("/sw.js").catch(() => {});
+}
+</script>
+</html>
