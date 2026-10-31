@@ -136,8 +136,8 @@ Limits: group and display names 1–80 and 1–60 chars, bill title 200 chars (t
   in green (`--success`) means you receive it, and |balance| < 1000 ₫ shows `settled`. Only a minus is ever printed —
   positive amounts carry no `+`. The API's `myBalance` keeps the raw payer-credit sign (positive = others owe you), so
   the sign you see is the inverse of the number in JSON.
-- Bill cards: green border when you paid, red border when you are involved but did not pay, plain otherwise.
-- Bills that involve the signed-in viewer get a green border on all four sides (`--success`, defined in `:root`); details (names, images, payer) live
-  in the card's Details dialog, and the card shows the participant count.
+- Bill cards: green border (`--success`) when you paid, red border (`--attention`) when you are involved but did not
+  pay, plain otherwise. Details (names, images, payer) live in the card's Details dialog, and the card shows the
+  participant count.
 - Summary: each bill adds `amount` to the payer and subtracts the even split (leftover đồng to the first participants)
   from each participant; payments shift balances; greedy min-cash-flow produces the transfer list.
