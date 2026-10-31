@@ -164,13 +164,15 @@ async function renameSelf() {
 /* ---------- groups ---------- */
 
 // Balance is payer-credit: positive means others owe you, negative means you owe them.
-// Display flips that to your own action: "+" you must pay, "−" you must receive. Settled stays bare.
-const signedMoney = (balance) => (balance < 0 ? `+${vnd(-balance)}` : `−${vnd(balance)}`);
+// Display flips that to your own action — the number you see is what you pay (+) or receive (−) —
+// but a minus is the only sign ever printed; positive and settled amounts stay bare.
+const shownBalance = (balance) => -balance;
+const money = (value) => (value < 0 ? `−${vnd(-value)}` : vnd(value));
 
 function balanceBadge(balance) {
   if (Math.abs(balance) < 1000) return '<span class="badge settled">settled</span>';
   const cls = balance < 0 ? "owe" : "owed";
-  return `<span class="badge ${cls}">${signedMoney(balance)}</span>`;
+  return `<span class="badge ${cls}">${money(shownBalance(balance))}</span>`;
 }
 
 async function viewGroups() {
@@ -269,7 +271,7 @@ async function viewGroup(id) {
     <h2 style="margin-top:16px">Summary</h2>
     <div class="card">
       <div>Total spent: <span class="money">${vnd(summary.totalSpent)}</span></div>
-      <ul>${summary.balances.map((b) => `<li>${esc(b.name)}: <span class="money${Math.abs(b.balance) < 1000 ? "" : b.balance < 0 ? " owe" : " owed"}">${Math.abs(b.balance) < 1000 ? vnd(0) : signedMoney(b.balance)}</span></li>`).join("")}</ul>
+      <ul>${summary.balances.map((b) => `<li>${esc(b.name)}: <span class="money${Math.abs(b.balance) < 1000 ? "" : b.balance < 0 ? " owe" : " owed"}">${money(Math.abs(b.balance) < 1000 ? 0 : shownBalance(b.balance))}</span></li>`).join("")}</ul>
       ${summary.settlements.length ? `<strong>Settle up</strong>
         <ul>${summary.settlements.map((s) => `<li>${esc(s.fromName)} → ${esc(s.toName)}: <span class="money">${vnd(s.amount)}</span></li>`).join("")}</ul>`
         : '<p class="muted">All settled.</p>'}
