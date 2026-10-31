@@ -25,6 +25,10 @@
   a.group:hover { border-color: var(--muted); }
   a.group .muted { font-size: .85rem; }
   .card.mine { border: 2px solid var(--success); }
+  .badge { font-size: .75rem; padding: 2px 8px; border-radius: 99px; border: 1px solid currentColor; white-space: nowrap; }
+  .badge.settled { color: var(--muted); }
+  .badge.pos { color: var(--success); }
+  .badge.neg { color: #d9534f; }
   fieldset.checks { border: 1px solid var(--muted); border-radius: 6px; padding: 10px 12px; margin: 0; display: grid; gap: 2px; }
   fieldset.checks legend { font-size: .85rem; color: var(--muted); padding: 0 6px; }
   label.check { display: flex; gap: 8px; align-items: center; color: inherit; font-size: .95rem; padding: 3px 0; cursor: pointer; }
@@ -158,6 +162,13 @@ async function renameSelf() {
 
 /* ---------- groups ---------- */
 
+// Three-way badge: approximately settled (|x| < 1000), you are owed, you owe.
+function balanceBadge(balance) {
+  if (Math.abs(balance) < 1000) return '<span class="badge settled">settled</span>';
+  if (balance > 0) return `<span class="badge pos">+${vnd(balance)}</span>`;
+  return `<span class="badge neg">−${vnd(-balance)}</span>`;
+}
+
 async function viewGroups() {
   const limit = 5;
   let offset = 0, q = "", total = 0, groups = [];
@@ -185,7 +196,9 @@ async function viewGroups() {
       </dialog>
       ${groups.length ? groups.map((g) => `
         <a class="card group" href="/${g.id}">
-          <strong>${esc(g.name)}</strong>
+          <span class="row" style="justify-content:space-between">
+            <strong>${esc(g.name)}</strong>${balanceBadge(g.myBalance)}
+          </span>
           <div class="muted">${g.memberCount} member${g.memberCount === 1 ? "" : "s"} · ${new Date(g.updatedAt).toLocaleDateString()}</div>
         </a>`).join("")
         : `<p class="muted">${q ? "No groups match." : "No groups yet."}</p>`}
@@ -270,7 +283,7 @@ async function viewGroup(id) {
       <input type="hidden" name="id">
       <label>Description<input name="title" placeholder="Dinner" maxlength="200"></label>
       <label>Amount (VND)<input name="amount" type="text" inputmode="numeric" autocomplete="off" placeholder="100.000" required>
-        <span class="muted hint" id="bill-amount-hint"></span></label>
+      </label>
       <label>Paid by<select name="paidBy">${members.map((m) => `<option value="${esc(m.email)}">${esc(m.name)}</option>`).join("")}</select></label>
       <fieldset class="checks"><legend>Involved</legend>
         ${members.map((m) => `<label class="check"><input type="checkbox" name="participants" value="${esc(m.email)}" checked> ${esc(m.name)}</label>`).join("")}
@@ -296,7 +309,7 @@ async function viewGroup(id) {
       <label>From<select name="from">${members.map((m) => `<option value="${esc(m.email)}">${esc(m.name)}</option>`).join("")}</select></label>
       <label>To<select name="to">${members.map((m) => `<option value="${esc(m.email)}">${esc(m.name)}</option>`).join("")}</select></label>
       <label>Amount (VND)<input name="amount" type="text" inputmode="numeric" autocomplete="off" placeholder="100.000" required>
-        <span class="muted hint" id="pay-amount-hint"></span></label>
+      </label>
       <label>Images<input name="files" type="file" accept="image/*" multiple></label>
       <div class="thumbs" id="pay-thumbs"></div>
       <div class="row"><button>Save payment</button></div>
@@ -321,11 +334,7 @@ async function viewGroup(id) {
   const billForm = $("#bill-form"), payForm = $("#pay-form");
 
   for (const input of [billForm.elements.amount, payForm.elements.amount]) {
-    input.oninput = () => {
-      formatAmount(input);
-      const hint = $(input === billForm.elements.amount ? "#bill-amount-hint" : "#pay-amount-hint");
-      hint.textContent = input.value ? vnd(amountValue(input)) : "";
-    };
+    input.oninput = () => formatAmount(input);
   }
 
   const participantBoxes = () => [...billForm.querySelectorAll('input[name="participants"]')];

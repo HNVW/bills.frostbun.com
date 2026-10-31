@@ -163,6 +163,35 @@ async function sendPush(env: Env, to: string[], title: string, body: string, url
   );
 }
 
+// The viewer's net position in each group: paid minus their share, adjusted by payments.
+async function balancesOf(env: Env, groupIds: string[], email: string) {
+  const out = new Map<string, number>(groupIds.map((g) => [g, 0]));
+  if (!groupIds.length) return out;
+  const ph = groupIds.map(() => "?").join(",");
+  const { results: bills } = await env.DB.prepare(
+    `SELECT group_id, amount, paid_by, participants FROM bills WHERE group_id IN (${ph})`,
+  )
+    .bind(...groupIds)
+    .all<{ group_id: string; amount: number; paid_by: string; participants: string }>();
+  const { results: pays } = await env.DB.prepare(
+    `SELECT group_id, amount, from_email, to_email FROM payments WHERE group_id IN (${ph})`,
+  )
+    .bind(...groupIds)
+    .all<{ group_id: string; amount: number; from_email: string; to_email: string }>();
+
+  for (const b of bills) {
+    if (b.paid_by === email) out.set(b.group_id, (out.get(b.group_id) ?? 0) + b.amount);
+    const participants = parse(b.participants, []);
+    const mine = participants.length ? split(b.amount, participants).find(([p]) => p === email) : undefined;
+    if (mine) out.set(b.group_id, (out.get(b.group_id) ?? 0) - mine[1]);
+  }
+  for (const p of pays) {
+    if (p.from_email === email) out.set(p.group_id, (out.get(p.group_id) ?? 0) + p.amount);
+    if (p.to_email === email) out.set(p.group_id, (out.get(p.group_id) ?? 0) - p.amount);
+  }
+  return out;
+}
+
 const groupOut = (g: Record<string, unknown>) => ({
   id: g.id,
   name: g.name,
@@ -329,7 +358,13 @@ on("GET", "/api/groups", async ({ env, email, url }) => {
   )
     .bind(...args, limit, offset)
     .all<Record<string, unknown>>();
-  return json({ groups: results.map((g) => ({ ...groupOut(g), updatedAt: g.updated_at })), total: total?.c ?? 0, limit, offset });
+  const balances = await balancesOf(env, results.map((g) => g.id as string), email);
+  return json({
+    groups: results.map((g) => ({ ...groupOut(g), updatedAt: g.updated_at, myBalance: balances.get(g.id as string) ?? 0 })),
+    total: total?.c ?? 0,
+    limit,
+    offset,
+  });
 });
 
 on("POST", "/api/groups", async ({ req, env, email }) => {
