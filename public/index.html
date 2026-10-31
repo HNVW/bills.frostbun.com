@@ -24,6 +24,9 @@
   a.group strong { display: block; margin-bottom: 2px; }
   a.group:hover { border-color: var(--muted); }
   a.group .muted { font-size: .85rem; }
+  .badge { font-size: .72rem; padding: 1px 7px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); }
+  .card.mine { border-left: 3px solid currentColor; }
+  .card.mine .badge { color: inherit; border-color: currentColor; }
   .muted { color: var(--muted); font-size: .85rem; }
   .money { font-variant-numeric: tabular-nums; font-weight: 600; }
   nav { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 12px; }
@@ -216,6 +219,7 @@ async function viewGroup(id) {
     api(`/api/groups/${id}/summary`),
   ]);
   const members = group.members;
+  const me = group.me;
   const nameOf = new Map(members.map((m) => [m.email, m.name]));
   const who = (email) => nameOf.get(email) ?? email;
   app.innerHTML = `
@@ -346,11 +350,16 @@ async function viewGroup(id) {
   }
 
   function billCard(b) {
-    return `<div class="card">
+    const involved = b.participants.includes(me);
+    return `<div class="card${involved ? " mine" : ""}">
       <div class="row" style="justify-content:space-between">
-        <strong>${esc(b.title || "Bill")}</strong><span class="money">${vnd(b.amount)}</span>
+        <strong>${esc(b.title || "Bill")}</strong>
+        <span class="row" style="gap:6px">
+          ${involved ? '<span class="badge">you are involved</span>' : '<span class="badge">not involved</span>'}
+          <span class="money">${vnd(b.amount)}</span>
+        </span>
       </div>
-      <div class="muted">${esc(who(b.paidBy))} paid · ${new Date(b.createdAt).toLocaleDateString()}</div>
+      <div class="muted">${esc(who(b.paidBy))} paid · ${b.participants.length} involved · ${new Date(b.createdAt).toLocaleDateString()}</div>
       <div class="row"><button data-details-bill="${b.id}">Details</button><button data-edit-bill="${b.id}">Edit</button><button class="danger" data-del-bill="${b.id}">Delete</button></div>
     </div>`;
   }

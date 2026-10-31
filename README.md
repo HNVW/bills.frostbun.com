@@ -132,5 +132,7 @@ image, `limit` capped at 50. Amounts are positive integers in đồng. Errors ar
   references, so nothing exists in R2 that D1 does not know about.
 - One push subscription per user per browser: subscribing replaces that user's previous rows (browsers rotate the
   endpoint on every resubscribe), and endpoints answering `404`/`410` are deleted on the next send.
+- Bill cards show `you are involved` / `not involved` for the signed-in viewer, with the participant count; the full
+  participant list and images live in the card's Details dialog.
 - Summary: each bill adds `amount` to the payer and subtracts the even split (leftover đồng to the first participants)
   from each participant; payments shift balances; greedy min-cash-flow produces the transfer list.
