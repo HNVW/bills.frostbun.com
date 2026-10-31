@@ -9,7 +9,7 @@
 <link rel="apple-touch-icon" href="/icon-192.png">
 <title>Shared Bills</title>
 <style>
-  :root { color-scheme: light dark; --muted: #888; --line: #8884; --success: #2e9e5b; }
+  :root { color-scheme: light dark; --muted: #888; --line: #8884; --success: #2e9e5b; --attention: #d9534f; }
   * { box-sizing: border-box; }
   body { margin: 0 auto; max-width: 760px; padding: 16px; font: 15px/1.5 system-ui, sans-serif; }
   h1, h2, h3 { margin: 0 0 8px; font-size: 1.15rem; }
@@ -24,11 +24,11 @@
   a.group strong { display: block; margin-bottom: 2px; }
   a.group:hover { border-color: var(--muted); }
   a.group .muted { font-size: .85rem; }
-  .card.mine { border: 2px solid var(--success); }
+  .card.mine { border: 2px solid var(--attention); }
   .badge { font-size: .75rem; padding: 2px 8px; border-radius: 99px; border: 1px solid currentColor; white-space: nowrap; }
   .badge.settled { color: var(--muted); }
-  .badge.pos { color: var(--success); }
-  .badge.neg { color: #d9534f; }
+  .badge.owe { color: var(--attention); }
+  .badge.owed { color: var(--success); }
   fieldset.checks { border: 1px solid var(--muted); border-radius: 6px; padding: 10px 12px; margin: 0; display: grid; gap: 2px; }
   fieldset.checks legend { font-size: .85rem; color: var(--muted); padding: 0 6px; }
   label.check { display: flex; gap: 8px; align-items: center; color: inherit; font-size: .95rem; padding: 3px 0; cursor: pointer; }
@@ -163,10 +163,11 @@ async function renameSelf() {
 /* ---------- groups ---------- */
 
 // Three-way badge: approximately settled (|x| < 1000), you are owed, you owe.
+// Only a negative balance carries a sign; positive and settled read as bare amounts.
 function balanceBadge(balance) {
   if (Math.abs(balance) < 1000) return '<span class="badge settled">settled</span>';
-  if (balance > 0) return `<span class="badge pos">+${vnd(balance)}</span>`;
-  return `<span class="badge neg">−${vnd(-balance)}</span>`;
+  if (balance > 0) return `<span class="badge owe">${vnd(balance)}</span>`;
+  return `<span class="badge owed">−${vnd(-balance)}</span>`;
 }
 
 async function viewGroups() {
