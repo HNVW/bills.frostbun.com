@@ -46,7 +46,8 @@ echo DEV_EMAIL=you@example.com > .dev.vars
 bun run dev
 ```
 
-`DEV_EMAIL` is the dev-only identity; remove the var to test the real Access headers. `bun run check` typechecks.
+`DEV_EMAIL` is the dev-only identity; remove the var to test the real Access headers. `bun run check` typechecks;
+`bun run test` exists but the repo has no test files — verification is manual against `wrangler dev`.
 Add the VAPID variables to `.dev.vars` to exercise push locally; `wrangler dev --test-scheduled` plus
 `GET /__scheduled` runs the orphan sweep on demand.
 
@@ -56,7 +57,7 @@ Add the VAPID variables to `.dev.vars` to exercise push locally; `wrangler dev -
 bun run deploy
 ```
 
-`bun run deploy` is `bunx wrangler deploy`. GitHub Actions runs the same on push to `master` (installs deps with Bun,
+`bun run deploy` is `wrangler deploy` (installed as a dev dependency). GitHub Actions runs the same on push to `master` (installs deps with Bun,
 needs `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in the org secrets). Schema changes are not part of the deploy:
 apply `migrations/*.sql` yourself.
 
@@ -72,8 +73,8 @@ apply `migrations/*.sql` yourself.
   offline navigation only; `/api/*` and `/img/*` bypass it, so data is always live (and never readable offline).
 - `/img/<group-id>/<uuid>.<ext>` — images, members of that group only.
 
-Every `/api/*` route requires the Access identity (`401` otherwise) except `/api/join/:token`, which also requires it
-but does not need prior membership.
+Every `/api/*` route requires the Access identity (`401` otherwise). The only difference is that `/api/join/:token`
+needs no prior membership — it is how you join.
 
 | Route | Effect |
 | --- | --- |
@@ -97,6 +98,10 @@ but does not need prior membership.
 | `POST /api/groups/:id/images` | upload an image |
 | `POST /api/join/:token` | join a group |
 
+Limits: group and display names 1–80 and 1–60 chars, bill title 200 chars (truncated), 10 images per entry, 8 MB per
+image, `limit` capped at 50. Amounts are positive integers in đồng. Errors are `{error}` with `400` (invalid input),
+`401` (no Access identity), `403` (not a member / not the creator), `404`, or `409` (referenced image vanished).
+
 ## Data
 
 - `groups(id, name, created_by, invite_token, …)`, `members(group_id, email)`,
@@ -108,7 +113,9 @@ but does not need prior membership.
 - Log out is the Access logout endpoint: `/cdn-cgi/access/logout`.
 - D1 `bills` runs in APAC (`running_in_region: APAC`). R2 `bills` placement is whatever the account first gave the name
   (the hint is ignored for an existing name).
-- Schema lives in `migrations/0001_init.sql`, one idempotent file covering all tables; re-running it is safe.
+- Schema lives in `migrations/0001_init.sql`, one idempotent file covering all tables; re-running it is safe. There is
+  no migration runner: schema changes are applied by hand (`bun run db:init`), and adding a column means editing this
+  file plus running the `ALTER` yourself.
 - Invites: each group has an `invite_token`; the members dialog shows `/<host>/join/<token>` plus Copy and Rotate.
   `POST /api/join/:token` adds the signed-in caller and returns the group (idempotent; rotating invalidates the old token).
 - Membership is the whole permission model: any member can create, edit and delete any bill or payment in the group;
