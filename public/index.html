@@ -9,7 +9,7 @@
 <link rel="apple-touch-icon" href="/icon-192.png">
 <title>Shared Bills</title>
 <style>
-  :root { color-scheme: light dark; --muted: #888; --line: #8884; }
+  :root { color-scheme: light dark; --muted: #888; --line: #8884; --success: #2e9e5b; }
   * { box-sizing: border-box; }
   body { margin: 0 auto; max-width: 760px; padding: 16px; font: 15px/1.5 system-ui, sans-serif; }
   h1, h2, h3 { margin: 0 0 8px; font-size: 1.15rem; }
@@ -25,10 +25,10 @@
   a.group:hover { border-color: var(--muted); }
   a.group .muted { font-size: .85rem; }
   .card.mine { border: 2px solid var(--success); }
-  fieldset.checks { border: 1px solid var(--line); border-radius: 6px; padding: 8px; margin: 0; display: grid; gap: 4px; }
-  fieldset.checks legend { font-size: .85rem; color: var(--muted); padding: 0 4px; }
-  label.check { display: flex; gap: 8px; align-items: center; color: inherit; font-size: .95rem; }
-  label.check input { width: auto; }
+  fieldset.checks { border: 1px solid var(--muted); border-radius: 6px; padding: 10px 12px; margin: 0; display: grid; gap: 2px; }
+  fieldset.checks legend { font-size: .85rem; color: var(--muted); padding: 0 6px; }
+  label.check { display: flex; gap: 8px; align-items: center; color: inherit; font-size: .95rem; padding: 3px 0; cursor: pointer; }
+  label.check input { width: auto; accent-color: var(--success); margin: 0; }
   .muted { color: var(--muted); font-size: .85rem; }
   .money { font-variant-numeric: tabular-nums; font-weight: 600; }
   nav { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 12px; }
