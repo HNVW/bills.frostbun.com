@@ -28,8 +28,12 @@ Installable as a PWA; bills involving you arrive as Web Push notifications.
    ```
    bunx wrangler secret put VAPID_PUBLIC_KEY
    bunx wrangler secret put VAPID_PRIVATE_KEY
-   bunx wrangler secret put VAPID_SUBJECT   # mailto:you@example.com
+   bunx wrangler secret put VAPID_SUBJECT   # contact URI, e.g. https://bills.frostbun.com
    ```
+
+   `VAPID_SUBJECT` is the `sub` claim of the VAPID JWT (RFC 8292): a contact URI the push service can use to reach the
+   operator if this server misbehaves. It is not a notification channel and nothing is emailed to it; `mailto:` and
+   `https:` are both valid, an `https:` URL on your own domain being the choice that exposes no address.
 
    Generate a keypair with `bunx web-push generate-vapid-keys`, or the ECDSA P-256 equivalent. Without the secrets, push
    is skipped and everything else works.

@@ -139,7 +139,8 @@ async function sendPush(env: Env, to: string[], title: string, body: string, url
   )
     .bind(...to)
     .all<{ endpoint: string; p256dh: string; auth: string }>();
-  const vapid = { subject: env.VAPID_SUBJECT ?? "mailto:noreply@frostbun.com", publicKey: env.VAPID_PUBLIC_KEY, privateKey: env.VAPID_PRIVATE_KEY };
+  // `sub` is a contact URI for the push service, not a delivery address.
+  const vapid = { subject: env.VAPID_SUBJECT || "https://bills.frostbun.com", publicKey: env.VAPID_PUBLIC_KEY, privateKey: env.VAPID_PRIVATE_KEY };
   await Promise.all(
     results.map(async (r) => {
       const sub = { endpoint: r.endpoint, expirationTime: null, keys: { p256dh: r.p256dh, auth: r.auth } };
