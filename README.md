@@ -102,8 +102,8 @@ needs no prior membership — it is how you join.
 | `POST /api/groups/:id/images` | upload an image |
 | `POST /api/join/:token` | join a group |
 
-Limits: group and display names 1–80 and 1–60 chars, bill title 200 chars (truncated), 10 images per entry, 8 MB per
-image, `limit` capped at 50. Amounts are positive integers in đồng. Errors are `{error}` with `400` (invalid input),
+Limits: group and display names 1–80 and 1–60 chars, bill title 200 chars (truncated), at least one involved member,
+10 images per entry, 8 MB per image, `limit` capped at 50. Amounts are positive integers in đồng. Errors are `{error}` with `400` (invalid input),
 `401` (no Access identity), `403` (not a member / not the creator), `404`, or `409` (referenced image vanished).
 
 ## Data

@@ -25,6 +25,10 @@
   a.group:hover { border-color: var(--muted); }
   a.group .muted { font-size: .85rem; }
   .card.mine { border: 2px solid var(--success); }
+  fieldset.checks { border: 1px solid var(--line); border-radius: 6px; padding: 8px; margin: 0; display: grid; gap: 4px; }
+  fieldset.checks legend { font-size: .85rem; color: var(--muted); padding: 0 4px; }
+  label.check { display: flex; gap: 8px; align-items: center; color: inherit; font-size: .95rem; }
+  label.check input { width: auto; }
   .muted { color: var(--muted); font-size: .85rem; }
   .money { font-variant-numeric: tabular-nums; font-weight: 600; }
   nav { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 12px; }
@@ -261,7 +265,9 @@ async function viewGroup(id) {
       <label>Description<input name="title" placeholder="Dinner" maxlength="200"></label>
       <label>Amount (VND)<input name="amount" type="number" min="1" step="1" required></label>
       <label>Paid by<select name="paidBy">${members.map((m) => `<option value="${esc(m.email)}">${esc(m.name)}</option>`).join("")}</select></label>
-      <label>Involved<select name="participants" multiple size="${Math.min(members.length, 5)}">${members.map((m) => `<option value="${esc(m.email)}" selected>${esc(m.name)}</option>`).join("")}</select></label>
+      <fieldset class="checks"><legend>Involved</legend>
+        ${members.map((m) => `<label class="check"><input type="checkbox" name="participants" value="${esc(m.email)}" checked> ${esc(m.name)}</label>`).join("")}
+      </fieldset>
       <label>Images<input name="files" type="file" accept="image/*" multiple></label>
       <div class="thumbs" id="bill-thumbs"></div>
       <div class="row"><button>Save bill</button></div>
@@ -306,15 +312,17 @@ async function viewGroup(id) {
 
   const billForm = $("#bill-form"), payForm = $("#pay-form");
 
-  function setSelect(el, values) {
-    for (const o of el.options) o.selected = values.includes(o.value);
+  const participantBoxes = () => [...billForm.querySelectorAll('input[name="participants"]')];
+
+  function setParticipants(values) {
+    for (const box of participantBoxes()) box.checked = values.includes(box.value);
   }
 
   function resetBill() {
     billForm.reset();
     billForm.elements.id.value = "";
     $("#bill-title").textContent = "Add bill";
-    setSelect(billForm.participants, members.map((m) => m.email));
+    setParticipants(members.map((m) => m.email));
     state.billImages = [];
     drawThumbs("bill");
     $("#bill-dialog").showModal();
@@ -323,11 +331,13 @@ async function viewGroup(id) {
   billForm.onsubmit = async (e) => {
     e.preventDefault();
     const f = billForm;
+    const participants = participantBoxes().filter((b) => b.checked).map((b) => b.value);
+    if (!participants.length) return fail(new Error("pick at least one involved person"));
     try {
       const images = [...state.billImages, ...(await uploadFiles(id, f.elements.files.files))];
       const body = {
         title: f.elements.title.value, amount: Number(f.elements.amount.value), paidBy: f.elements.paidBy.value,
-        participants: [...f.elements.participants.selectedOptions].map((o) => o.value), images,
+        participants, images,
       };
       if (f.elements.id.value) await api(`/api/groups/${id}/bills/${f.elements.id.value}`, { method: "PATCH", body: JSON.stringify(body) });
       else await api(`/api/groups/${id}/bills`, { method: "POST", body: JSON.stringify(body) });
@@ -340,7 +350,7 @@ async function viewGroup(id) {
     billForm.elements.title.value = b.title;
     billForm.elements.amount.value = b.amount;
     billForm.elements.paidBy.value = b.paidBy;
-    setSelect(billForm.participants, b.participants);
+    setParticipants(b.participants);
     state.billImages = [...b.images];
     drawThumbs("bill");
     $("#bill-title").textContent = "Edit bill";
