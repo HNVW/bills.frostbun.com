@@ -62,30 +62,7 @@ bun run deploy
 ```
 
 `bun run deploy` is `wrangler deploy` (installed as a dev dependency). GitHub Actions runs the same on push to `master` (installs deps with Bun,
-needs `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in the org secrets). Schema changes are not part of the deploy:
-apply `migrations/*.sql` yourself.
-
-Existing databases need the `images` → `image` and `users.qr` change before the new Worker is deployed:
-
-```sql
-ALTER TABLE bills RENAME COLUMN images TO images_old;
-ALTER TABLE bills ADD COLUMN image TEXT;
-ALTER TABLE payments RENAME COLUMN images TO images_old;
-ALTER TABLE payments ADD COLUMN image TEXT;
-DROP TABLE IF EXISTS uploads;
-
-UPDATE bills SET image = CASE WHEN INSTR(SUBSTR(images_old, 3), '"') > 0
-  THEN SUBSTR(images_old, 3, INSTR(SUBSTR(images_old, 3), '"') - 1) END WHERE images_old LIKE '["%';
-UPDATE payments SET image = CASE WHEN INSTR(SUBSTR(images_old, 3), '"') > 0
-  THEN SUBSTR(images_old, 3, INSTR(SUBSTR(images_old, 3), '"') - 1) END WHERE images_old LIKE '["%';
-
-ALTER TABLE bills DROP COLUMN images_old;
-ALTER TABLE payments DROP COLUMN images_old;
-ALTER TABLE users ADD COLUMN qr TEXT;
-```
-
-Bills that had several images keep the first; the rest stay in R2 but are unreferenced. Old keys are still served, so
-nothing 404s, and `ALTER TABLE … DROP COLUMN` needs a recent D1 SQLite (it is supported now).
+needs `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in the org secrets).
 
 ## Routes
 
@@ -142,9 +119,7 @@ one image per entry, 8 MB per image, `limit` capped at 50. Amounts are positive 
 - Log out is the Access logout endpoint: `/cdn-cgi/access/logout`.
 - D1 `bills` runs in APAC (`running_in_region: APAC`). R2 `bills` placement is whatever the account first gave the name
   (the hint is ignored for an existing name).
-- Schema lives in `migrations/0001_init.sql`, one idempotent file covering all tables; re-running it is safe. There is
-  no migration runner: schema changes are applied by hand (`bun run db:init`), and adding a column means editing this
-  file plus running the `ALTER` yourself.
+- Schema lives in `migrations/0001_init.sql`, one idempotent file covering all tables; re-running it is safe.
 - Invites: each group has an `invite_token`; the members dialog shows `/<host>/join/<token>` plus Copy and Rotate.
   `POST /api/join/:token` adds the signed-in caller and returns the group (idempotent; rotating invalidates the old token).
 - Membership is the whole permission model: any member can create, edit and delete any bill or payment in the group;
@@ -156,12 +131,9 @@ one image per entry, 8 MB per image, `limit` capped at 50. Amounts are positive 
   `image` and the Worker stores it only if it matches the derived key. Ids are minted client-side so the image can be
   uploaded before the row exists; `POST` rejects a reused id with `409`.
 - Keys carry no extension, so `serveImage` serves R2's stored `httpMetadata.contentType`. Uploads made through the
-  app always set it. Bulk uploads must set it explicitly: rclone derives the type from the *destination key* and
-  writes `application/octet-stream` for extensionless keys (its `--header-upload`/`--metadata-set` flags are ignored
-  by the S3 backend). Use an S3 client with `ContentType`, e.g. `put_object(..., ContentType="image/jpeg")`.
+  app always set it; anything written to the bucket by another tool must set it too.
 - Keys must start at the bucket root: the Worker serves `/img/<key>` where `<key>` is exactly `bills/<group>/<entry>`,
-  `payments/<group>/<entry>` or `qrs/<email>`. Uploading through a folder prefix (e.g. `rclone copy dir personal:bills/dir`)
-  produces `dir/bills/...`, which reads as a 404.
+  `payments/<group>/<entry>` or `qrs/<email>`. A key under any extra prefix reads as a 404.
 - No orphan sweep: there is no `uploads` table and no cron. An entry's object is deleted by exact key on edit/delete.
   Group deletion lists by prefix (`deletePrefix`) so images uploaded for never-saved entries are removed too.
 - Keys written before the layout split (`<group-id>/<uuid>.<ext>`) are still served (`LEGACY_RE`); see `migrations/`.
