@@ -68,7 +68,7 @@
   <form id="profile-form">
     <div class="row" style="justify-content:space-between"><strong>Your profile</strong>
       <button type="button" class="muted" data-close="profile-dialog">Close</button></div>
-    <label>Display name<input name="name" maxlength="60" required></label>
+    <label>Display name<input name="name" maxlength="60" autofocus required></label>
     <span class="muted">Payment QR</span>
     <div class="thumbs" id="qr-preview"></div>
     <label>Replace QR<input name="qr" type="file" accept="image/*"></label>
@@ -226,7 +226,7 @@ async function viewGroups() {
         <form id="new-group">
           <div class="row" style="justify-content:space-between"><strong>New group</strong>
             <button type="button" class="muted" data-close="group-dialog">Close</button></div>
-          <label>Name<input name="name" placeholder="Group name" required maxlength="80"></label>
+          <label>Name<input name="name" placeholder="Group name" autofocus required maxlength="80"></label>
           <div class="row"><button>Create</button></div>
         </form>
       </dialog>
@@ -295,7 +295,7 @@ async function viewGroup(id) {
       <label>Invite link<input id="invite-link" readonly value="${esc(location.origin + "/join/" + group.inviteToken)}"></label>
       <div class="row"><button type="button" id="copy-invite">Copy</button><button type="button" id="rotate-invite">Rotate link</button></div>
       <p class="muted">Anyone signed in who opens this link joins the group. Rotating invalidates the old link.</p>
-      <form id="invite"><div class="row"><input name="email" type="email" placeholder="friend@example.com" required><button>Invite</button></div></form>
+      <form id="invite"><div class="row"><input name="email" type="email" placeholder="friend@example.com" autofocus required><button>Invite</button></div></form>
     </dialog>
 
     <h2 style="margin-top:16px">Summary</h2>
@@ -319,7 +319,7 @@ async function viewGroup(id) {
       <div class="row" style="justify-content:space-between"><strong id="bill-title">Add bill</strong>
         <button type="button" class="muted" data-close="bill-dialog">Close</button></div>
       <input type="hidden" name="id">
-      <label>Description<input name="title" placeholder="Dinner" maxlength="200"></label>
+      <label>Description<input name="title" placeholder="Dinner" autofocus maxlength="200"></label>
       <label>Amount (VND)<input name="amount" type="text" inputmode="numeric" autocomplete="off" placeholder="100.000" required>
       </label>
       <label>Paid by<select name="paidBy">${members.map((m) => `<option value="${esc(m.email)}">${esc(m.name)}</option>`).join("")}</select></label>
@@ -346,7 +346,7 @@ async function viewGroup(id) {
       <input type="hidden" name="id">
       <label>From<select name="from">${members.map((m) => `<option value="${esc(m.email)}">${esc(m.name)}</option>`).join("")}</select></label>
       <label>To<select name="to">${members.map((m) => `<option value="${esc(m.email)}">${esc(m.name)}</option>`).join("")}</select></label>
-      <label>Amount (VND)<input name="amount" type="text" inputmode="numeric" autocomplete="off" placeholder="100.000" required>
+      <label>Amount (VND)<input name="amount" type="text" inputmode="numeric" autocomplete="off" placeholder="100.000" autofocus required>
       </label>
       <label>Image<input name="file" type="file" accept="image/*"></label>
       <div class="thumbs" id="pay-thumbs"></div>
@@ -656,6 +656,20 @@ async function render() {
     if (err.message !== "unauthenticated") app.innerHTML = `<p class="danger">${esc(err.message)}</p>`;
   }
 }
+
+// Backdrop tap closes a dialog. Track where the press started so a drag
+// selection that ends over the backdrop does not close it.
+let pressedBackdrop = null;
+document.addEventListener("pointerdown", (e) => {
+  const d = e.target;
+  if (!(d instanceof HTMLDialogElement)) { pressedBackdrop = null; return; }
+  const r = d.getBoundingClientRect();
+  pressedBackdrop = e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom ? d : null;
+});
+document.addEventListener("click", (e) => {
+  if (pressedBackdrop && e.target === pressedBackdrop) pressedBackdrop.close();
+  pressedBackdrop = null;
+});
 
 window.addEventListener("popstate", render);
 render();
