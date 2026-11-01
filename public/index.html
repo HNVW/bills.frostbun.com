@@ -187,7 +187,7 @@ async function openProfile() {
 function drawQr() {
   const box = $("#qr-preview");
   box.innerHTML = meQr
-    ? `<img src="${esc(meQr)}" alt="Your payment QR"><button type="button" class="danger" data-drop-qr="1">Remove</button>`
+    ? `<figure><img src="${esc(meQr)}" alt="Your payment QR"><button data-drop-qr="1" title="Remove">×</button></figure>`
     : '<span class="muted">No QR yet — upload a screenshot of your bank transfer QR.</span>';
 }
 
