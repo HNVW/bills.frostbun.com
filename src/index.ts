@@ -280,15 +280,14 @@ on("POST", "/api/push/subscribe", async ({ req, env, email }) => {
   const auth = typeof keys.auth === "string" ? keys.auth : "";
   const local = env.DEV_EMAIL && /^http:\/\/(127\.0\.0\.1|localhost):\d+\//.test(endpoint);
   if ((!endpoint.startsWith("https://") && !local) || !p256dh || !auth) return error("invalid subscription");
-  // A browser rotates its endpoint on every resubscribe, so old rows for this user are dead weight.
-  // Dropping them keeps one row per user per browser and bounds the table at any number of off/on toggles.
-  await env.DB.batch([
-    env.DB.prepare("DELETE FROM push_subscriptions WHERE email = ? AND endpoint <> ?").bind(email, endpoint),
-    env.DB.prepare(
-      `INSERT INTO push_subscriptions (endpoint, email, p256dh, auth, created_at) VALUES (?, ?, ?, ?, ?)
-       ON CONFLICT (endpoint) DO UPDATE SET email = excluded.email, p256dh = excluded.p256dh, auth = excluded.auth, created_at = excluded.created_at`,
-    ).bind(endpoint, email, p256dh, auth, new Date().toISOString()),
-  ]);
+  // The endpoint identifies the browser: a rotated endpoint arrives as a new row, and the old one is
+  // dropped later by the 404/410 sweep. Rows for other browsers stay — they are separate devices.
+  await env.DB.prepare(
+    `INSERT INTO push_subscriptions (endpoint, email, p256dh, auth, created_at) VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT (endpoint) DO UPDATE SET email = excluded.email, p256dh = excluded.p256dh, auth = excluded.auth, created_at = excluded.created_at`,
+  )
+    .bind(endpoint, email, p256dh, auth, new Date().toISOString())
+    .run();
   return json({ ok: true }, 201);
 });
 

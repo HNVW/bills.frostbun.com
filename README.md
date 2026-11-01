@@ -142,8 +142,10 @@ image vanished).
 - Personal QR: `POST /api/me/qr` stores the key in `users.qr` (`qrs/<email>`) and the object in R2; `DELETE` clears
   both. Readable by you and by anyone sharing a group with you (`canSeeQr`), served at `/img/qrs/<email>`. Clicking a
   name in a group's summary opens it; the nav name opens a dialog to edit your display name and replace/remove the QR.
-- One push subscription per user per browser: subscribing replaces that user's previous rows (browsers rotate the
-  endpoint on every resubscribe), and endpoints answering `404`/`410` are deleted on the next send.
+- One push subscription row per browser: a row is identified by its endpoint, so enabling notifications in a
+  second browser adds a second row instead of replacing the first. Re-enabling in the same browser reuses its row
+  (browsers rotate the endpoint on resubscribe, which lands as a new row — the stale one is deleted on the next
+  send that answers `404`/`410`).
 - Balance display is from the viewer's side: `22.500 ₫` in red (`--attention`) means you must pay that much, `−30.000 ₫`
   in green (`--success`) means you receive it, and |balance| < 1000 ₫ shows `settled`. Only a minus is ever printed —
   positive amounts carry no `+`. The API's `myBalance` keeps the raw payer-credit sign (positive = others owe you), so
