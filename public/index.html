@@ -44,6 +44,7 @@
   .thumbs figure { margin: 0; position: relative; }
   .thumbs button { position: absolute; top: -6px; right: -6px; padding: 0 5px; border-radius: 50%; background: Canvas; }
   .danger { color: #d33; }
+  button.link { background: none; border: 0; padding: 0; font: inherit; color: inherit; text-decoration: underline dotted var(--muted); cursor: pointer; }
   .hidden { display: none !important; }
   details { border: 1px solid var(--line); border-radius: 6px; padding: 8px; }
   summary { cursor: pointer; }
@@ -53,11 +54,28 @@
   dialog img { max-width: 100%; border-radius: 6px; border: 1px solid var(--line); }
 </style>
 <nav><a href="/" id="home" title="All groups">Shared Bills</a><span class="row">
-  <button id="me" class="muted" title="Rename yourself"></button>
+  <button id="me" class="muted" title="Your profile — name and payment QR"></button>
   <button id="notify" class="muted" title="Notifications"></button>
   <button id="logout" class="muted" title="Sign out of Cloudflare Access">Log out</button>
 </span></nav>
 <main id="app"></main>
+<dialog id="qr-dialog">
+  <div class="row" style="justify-content:space-between"><strong></strong>
+    <button type="button" class="muted" data-close="qr-dialog">Close</button></div>
+  <div id="qr-view"></div>
+</dialog>
+<dialog id="profile-dialog">
+  <form id="profile-form">
+    <div class="row" style="justify-content:space-between"><strong>Your profile</strong>
+      <button type="button" class="muted" data-close="profile-dialog">Close</button></div>
+    <label>Display name<input name="name" maxlength="60" required></label>
+    <span class="muted">Payment QR</span>
+    <div class="thumbs" id="qr-preview"></div>
+    <label>Replace QR<input name="qr" type="file" accept="image/*"></label>
+    <p class="muted">Shown to people who share a group with you, so they can scan it when they pay you.</p>
+    <div class="row"><button>Save</button></div>
+  </form>
+</dialog>
 <script>
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -85,12 +103,12 @@ function fail(err) {
   alert(err.message || err);
 }
 
-async function uploadFiles(groupId, files) {
+async function uploadFiles(groupId, kind, files) {
   const keys = [];
   for (const file of files) {
     const fd = new FormData();
     fd.append("file", file);
-    keys.push((await api(`/api/groups/${groupId}/images`, { method: "POST", body: fd })).key);
+    keys.push((await api(`/api/groups/${groupId}/${kind}/images`, { method: "POST", body: fd })).key);
   }
   return keys;
 }
@@ -153,12 +171,23 @@ async function paintNotify() {
 
 /* ---------- self ---------- */
 
-async function renameSelf() {
+let meQr = null;
+
+// Name and payment QR live together: both are "who you are" to the rest of the app.
+async function openProfile() {
   const me = await api("/api/me").catch(() => null);
-  const name = prompt("Your display name", me?.name ?? "");
-  if (!name || !name.trim()) return;
-  try { await api("/api/me", { method: "PATCH", body: JSON.stringify({ name }) }); render(); }
-  catch (err) { fail(err); }
+  meQr = me?.qr ?? null;
+  const dlg = $("#profile-dialog");
+  dlg.querySelector("[name=name]").value = me?.name ?? "";
+  drawQr();
+  dlg.showModal();
+}
+
+function drawQr() {
+  const box = $("#qr-preview");
+  box.innerHTML = meQr
+    ? `<img src="${esc(meQr)}" alt="Your payment QR"><button type="button" class="danger" data-drop-qr="1">Remove</button>`
+    : '<span class="muted">No QR yet — upload a screenshot of your bank transfer QR.</span>';
 }
 
 /* ---------- groups ---------- */
@@ -271,9 +300,11 @@ async function viewGroup(id) {
     <h2 style="margin-top:16px">Summary</h2>
     <div class="card">
       <div>Total spent: <span class="money">${vnd(summary.totalSpent)}</span></div>
-      <ul>${summary.balances.map((b) => `<li>${esc(b.name)}: <span class="money${Math.abs(b.balance) < 1000 ? "" : b.balance < 0 ? " owe" : " owed"}">${money(Math.abs(b.balance) < 1000 ? 0 : shownBalance(b.balance))}</span></li>`).join("")}</ul>
+      <ul>${summary.balances.map((b) => `<li><button type="button" class="link" data-qr="${esc(b.email)}">${esc(b.name)}</button>: <span class="money${Math.abs(b.balance) < 1000 ? "" : b.balance < 0 ? " owe" : " owed"}">${money(Math.abs(b.balance) < 1000 ? 0 : shownBalance(b.balance))}</span></li>`).join("")}</ul>
       ${summary.settlements.length ? `<strong>Settle up</strong>
-        <ul>${summary.settlements.map((s) => `<li>${esc(s.fromName)} → ${esc(s.toName)}: <span class="money">${vnd(s.amount)}</span></li>`).join("")}</ul>`
+        <ul>${summary.settlements.map((s) => `<li>${esc(s.fromName)} → ${esc(s.toName)}: <span class="money">${vnd(s.amount)}</span>${
+          s.from === me ? ` <button type="button" class="muted" data-qr="${esc(s.to)}" title="Show ${esc(s.toName)}'s QR">QR</button>` : ""
+        }</li>`).join("")}</ul>`
         : '<p class="muted">All settled.</p>'}
     </div>
 
@@ -365,7 +396,7 @@ async function viewGroup(id) {
     const participants = participantBoxes().filter((b) => b.checked).map((b) => b.value);
     if (!participants.length) return fail(new Error("pick at least one involved person"));
     try {
-      const images = [...state.billImages, ...(await uploadFiles(id, f.elements.files.files))];
+      const images = [...state.billImages, ...(await uploadFiles(id, "bills", f.elements.files.files))];
       const body = {
         title: f.elements.title.value, amount: amountValue(f.elements.amount), paidBy: f.elements.paidBy.value,
         participants, images,
@@ -375,6 +406,16 @@ async function viewGroup(id) {
       render();
     } catch (err) { fail(err); }
   };
+
+  // A missing QR is not an error: the <img> onerror swaps in a note instead.
+  function showQr(m) {
+    if (!m) return;
+    const dlg = $("#qr-dialog");
+    dlg.querySelector("strong").textContent = m.name;
+    dlg.querySelector("#qr-view").innerHTML =
+      `<img src="${esc(m.qr)}" alt="${esc(m.name)}'s QR" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'muted',textContent:'No QR set.'}))">`;
+    dlg.showModal();
+  }
 
   function editBill(b) {
     billForm.elements.id.value = b.id;
@@ -437,7 +478,7 @@ async function viewGroup(id) {
     e.preventDefault();
     const f = payForm;
     try {
-      const images = [...state.payImages, ...(await uploadFiles(id, f.elements.files.files))];
+      const images = [...state.payImages, ...(await uploadFiles(id, "payments", f.elements.files.files))];
       const body = { from: f.elements.from.value, to: f.elements.to.value, amount: amountValue(f.elements.amount), images };
       if (f.elements.id.value) await api(`/api/groups/${id}/payments/${f.elements.id.value}`, { method: "PATCH", body: JSON.stringify(body) });
       else await api(`/api/groups/${id}/payments`, { method: "POST", body: JSON.stringify(body) });
@@ -473,7 +514,8 @@ async function viewGroup(id) {
           `Amount: <span class="money">${vnd(p.amount)}</span>`,
           `<span class="muted">${new Date(p.createdAt).toLocaleString()}</span>`,
         ], p.images);
-      } else if (t.dataset.members) $("#members-dialog").showModal();
+      } else if (t.dataset.qr) showQr(members.find((m) => m.email === t.dataset.qr));
+      else if (t.dataset.members) $("#members-dialog").showModal();
       else if (t.dataset.newBill) { t.closest("details").open = true; resetBill(); }
       else if (t.dataset.newPay) { t.closest("details").open = true; resetPay(); }
       else if (t.dataset.close) $("#" + t.dataset.close).close();
@@ -540,7 +582,7 @@ let meName = "";
 function bindNav() {
   $("#me").textContent = meName;
   $("#logout").onclick = () => { location.href = "/cdn-cgi/access/logout"; };
-  $("#me").onclick = renameSelf;
+  $("#me").onclick = () => openProfile().catch(fail);
   paintNotify();
   $("#home").onclick = (e) => {
     e.preventDefault();
@@ -548,6 +590,35 @@ function bindNav() {
     else { location.href = "/"; }
   };
 }
+
+$("#profile-form").onsubmit = async (e) => {
+  e.preventDefault();
+  const f = e.target;
+  try {
+    const name = f.elements.name.value.trim();
+    await api("/api/me", { method: "PATCH", body: JSON.stringify({ name }) });
+    const file = f.elements.qr.files[0];
+    if (file) {
+      const fd = new FormData();
+      fd.append("file", file);
+      meQr = (await api("/api/me/qr", { method: "POST", body: fd })).qr;
+    }
+    meName = name;
+    $("#me").textContent = name;
+    f.elements.qr.value = "";
+    $("#profile-dialog").close();
+    render();
+  } catch (err) { fail(err); }
+};
+
+$("#qr-preview").onclick = async (e) => {
+  if (!e.target.dataset.dropQr) return;
+  try {
+    await api("/api/me/qr", { method: "DELETE" });
+    meQr = null;
+    drawQr();
+  } catch (err) { fail(err); }
+};
 
 async function joinGroup(token) {
   app.innerHTML = '<p class="muted">Joining…</p>';

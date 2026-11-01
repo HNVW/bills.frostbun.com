@@ -84,8 +84,8 @@ needs no prior membership — it is how you join.
 | --- | --- |
 | `GET /api/push/key` | VAPID public key for `pushManager.subscribe` |
 | `POST·DELETE /api/push/subscribe` | register / drop this browser's push subscription |
-| `GET /api/me` | `{email, name}` |
-| `PATCH /api/me` | set display name |
+| `GET /api/me` | `{email, name, qr}` |
+| `PATCH /api/me` | set display name (returns `name` and `qr`) |
 | `GET /api/groups?q=&limit=&offset=` | your groups with `myBalance`, newest activity first (last bill/payment, else creation); `q` matches the name; defaults `limit=5` |
 | `POST /api/groups` | create a group |
 | `GET /api/groups/:id` | group, members, `inviteToken` |
@@ -99,7 +99,10 @@ needs no prior membership — it is how you join.
 | `GET·POST /api/groups/:id/payments` | list / create payment |
 | `PATCH·DELETE /api/groups/:id/payments/:paymentId` | edit / delete payment |
 | `GET /api/groups/:id/summary` | totals, balances, settle-up transfers |
-| `POST /api/groups/:id/images` | upload an image |
+| `POST /api/groups/:id/bills/images` | upload a bill image |
+| `POST /api/groups/:id/payments/images` | upload a payment image |
+| `GET·PATCH /api/me` | your name and QR (`qr` is a URL or `null`) |
+| `POST·DELETE /api/me/qr` | upload / remove your payment QR (multipart `file`) |
 | `POST /api/join/:token` | join a group |
 
 Limits: group and display names 1–80 and 1–60 chars, bill title 200 chars (truncated), at least one involved member,
@@ -124,9 +127,16 @@ Limits: group and display names 1–80 and 1–60 chars, bill title 200 chars (t
   `POST /api/join/:token` adds the signed-in caller and returns the group (idempotent; rotating invalidates the old token).
 - Membership is the whole permission model: any member can create, edit and delete any bill or payment in the group;
   only the creator can rename/delete the group or remove other members.
-- Images: `POST /api/groups/:id/images` (multipart `file`, ≤8 MB, image/*) returns a key `<group-id>/<uuid>.<ext>`;
-  pass keys in `images`. Keys are validated to belong to the group, and saving a bill/payment checks each object still
-  exists (`409` otherwise).
+- R2 layout: `<bucket>/qrs/<email>`, `<bucket>/bills/<group-id>/<uuid>.<ext>`, `<bucket>/payments/<group-id>/<uuid>.<ext>`.
+  Keys are produced only by the Worker (`qrKey`, `uploadKey`).
+- Images: `POST /api/groups/:id/bills/images` or `.../payments/images` (multipart `file`, ≤8 MB, image/*) returns a key;
+  pass keys in `images`. A bill accepts only `bills/<group-id>/` keys and a payment only `payments/<group-id>/`, and
+  saving checks each object still exists (`409` otherwise). A key can be referenced by only its own kind.
+- Uploads stored before the layout split (`<group-id>/<uuid>.<ext>`) are still accepted and served; `KEY_RE` and
+  `parseImages` keep both shapes so existing bills stay editable. Nothing was migrated.
+- Personal QR: `POST /api/me/qr` stores `qrs/<email>` in R2 (no D1 column — presence is `HEAD`ed). It is readable by
+  you and by anyone sharing a group with you (`canSeeQr`), served through `/img/qrs/<email>`. Clicking a name in a
+  group's summary opens it; the nav name opens a dialog to edit your display name and replace/remove the QR.
 - Uploads are tracked in `uploads(key, group_id, created_at)` until referenced; deleting a bill/payment/group deletes
   its objects. A daily cron (`0 0 * * *`, 00:00 UTC) deletes tracked objects older than 1 hour that no bill or payment
   references, so nothing exists in R2 that D1 does not know about.

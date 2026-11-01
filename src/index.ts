@@ -78,8 +78,38 @@ async function membersOf(env: Env, groupId: string) {
   )
     .bind(groupId)
     .all<{ email: string; name: string }>();
-  return results;
+  // Members carry a stable QR URL; the object may not exist, so the UI hides a failed load.
+  return results.map((m) => ({ ...m, qr: qrUrl(m.email) }));
 }
+
+// R2 layout: {qrs,bills,payments}/<id or email>[/<uuid>.<ext>]. Every key is produced here and nowhere else.
+const QR_EMAIL = /^[^/]+@[^/]+$/;
+const qrKey = (email: string) => `qrs/${email}`;
+const qrUrl = (email: string) => `/img/${qrKey(email)}`;
+const uploadKey = (kind: "bills" | "payments", groupId: string, ext: string) =>
+  `${kind}/${groupId}/${crypto.randomUUID()}.${ext}`;
+
+function extOf(file: File) {
+  const ext = (file.name.split(".").pop() ?? "").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 8);
+  return IMAGE_TYPES[file.type] ?? (ext || "bin");
+}
+
+// Content type is derived from the extension on the way back out, so the key carries no metadata.
+const IMAGE_TYPES: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+  "image/gif": "gif",
+  "image/avif": "avif",
+  "image/heic": "heic",
+};
+const TYPE_OF_EXT: Record<string, string> = Object.fromEntries(
+  Object.entries(IMAGE_TYPES).map(([type, ext]) => [ext, type]),
+);
+
+// `<kind>/<id>/<uuid>.<ext>` for bills and payments; `qrs/<email>` for a person's payment QR.
+// Keys written before the split lived at `<id>/<uuid>.<ext>`; those objects are still served as-is.
+const KEY_RE = /^(?:(?:bills|payments)\/)?([0-9a-f-]{36})\/[A-Za-z0-9-]+\.[a-z0-9]{1,8}$/;
 
 async function deleteImages(env: Env, keys: string[]) {
   await Promise.all(keys.map((k) => env.IMAGES.delete(k).catch(() => undefined)));
@@ -242,13 +272,14 @@ async function missingObjects(env: Env, keys: string[]) {
   return "";
 }
 
-function parseImages(v: unknown, groupId: string): string[] | null {
+function parseImages(v: unknown, kind: "bills" | "payments", groupId: string): string[] | null {
   if (v === undefined || v === null) return [];
   if (!Array.isArray(v)) return null;
-  const prefix = `${groupId}/`;
+  // Accepts this kind's new keys and legacy `<group>/...` keys, so editing an old bill keeps its images.
+  const prefixes = [`${kind}/${groupId}/`, `${groupId}/`];
   const out: string[] = [];
   for (const k of v) {
-    if (typeof k !== "string" || !k.startsWith(prefix) || k.includes("..")) return null;
+    if (typeof k !== "string" || !prefixes.some((p) => k.startsWith(p)) || k.includes("..")) return null;
     out.push(k);
   }
   return out.slice(0, 10);
@@ -319,17 +350,18 @@ on("DELETE", "/api/push/subscribe", async ({ req, env, email }) => {
 on("GET", "/api/me", async ({ req, env, email }) => {
   await ensureUserName(env, req, email);
   const row = await env.DB.prepare("SELECT name FROM users WHERE email = ?").bind(email).first<{ name: string }>();
-  return json({ email, name: row?.name ?? email });
+  return json({ email, name: row?.name ?? email, qr: (await env.IMAGES.head(qrKey(email))) ? qrUrl(email) : null });
 });
 
 on("PATCH", "/api/me", async ({ req, env, email }) => {
-  const raw = (await jsonBody(req)).name;
-  const name = typeof raw === "string" ? raw.trim() : "";
+  const body = await jsonBody(req);
+  if (body.name === undefined) return error("name required (1-60 chars)");
+  const name = typeof body.name === "string" ? body.name.trim() : "";
   if (!name || name.length > 60) return error("name required (1-60 chars)");
   await env.DB.prepare("INSERT INTO users (email, name) VALUES (?, ?) ON CONFLICT (email) DO UPDATE SET name = excluded.name")
     .bind(email, name)
     .run();
-  return json({ email, name });
+  return json({ email, name, qr: (await env.IMAGES.head(qrKey(email))) ? qrUrl(email) : null });
 });
 
 // "Recently updated" = last bill or payment, falling back to creation.
@@ -481,7 +513,7 @@ on("POST", "/api/groups/:id/bills", async ({ req, env, email, p, ctx }) => {
   if (!allowed.has(paidBy)) return error("paidBy must be a member of this group");
   const participants = parseParticipants(body.participants, allowed, paidBy);
   if (typeof participants === "string") return error(participants);
-  const images = parseImages(body.images, id);
+  const images = parseImages(body.images, "bills", id);
   if (!images) return error("images must be keys uploaded for this group");
   const missing = await missingObjects(env, images);
   if (missing) return error(`image no longer exists: ${missing}`, 409);
@@ -521,7 +553,7 @@ on("PATCH", "/api/groups/:id/bills/:bill", async ({ req, env, email, p }) => {
   if (!allowed.has(paidBy as string)) return error("paidBy must be a member of this group");
   const participants = parseParticipants(body.participants ?? current.participants, allowed, paidBy as string);
   if (typeof participants === "string") return error(participants);
-  const images = body.images === undefined ? current.images : parseImages(body.images, id);
+  const images = body.images === undefined ? current.images : parseImages(body.images, "bills", id);
   if (!images) return error("images must be keys uploaded for this group");
   const missing = await missingObjects(env, images);
   if (missing) return error(`image no longer exists: ${missing}`, 409);
@@ -573,7 +605,7 @@ on("POST", "/api/groups/:id/payments", async ({ req, env, email, p }) => {
   const to = normEmail(body.to);
   if (!allowed.has(from) || !allowed.has(to)) return error("from and to must be members of this group");
   if (from === to) return error("from and to must differ");
-  const images = parseImages(body.images, id);
+  const images = parseImages(body.images, "payments", id);
   if (!images) return error("images must be keys uploaded for this group");
   const missing = await missingObjects(env, images);
   if (missing) return error(`image no longer exists: ${missing}`, 409);
@@ -602,7 +634,7 @@ on("PATCH", "/api/groups/:id/payments/:payment", async ({ req, env, email, p }) 
   const to = body.to === undefined ? current.to : normEmail(body.to);
   if (!allowed.has(from as string) || !allowed.has(to as string)) return error("from and to must be members of this group");
   if (from === to) return error("from and to must differ");
-  const images = body.images === undefined ? current.images : parseImages(body.images, id);
+  const images = body.images === undefined ? current.images : parseImages(body.images, "payments", id);
   if (!images) return error("images must be keys uploaded for this group");
   const missing = await missingObjects(env, images);
   if (missing) return error(`image no longer exists: ${missing}`, 409);
@@ -680,27 +712,64 @@ on("GET", "/api/groups/:id/summary", async ({ env, email, p }) => {
 
 // --- images ---
 
-on("POST", "/api/groups/:id/images", async ({ req, env, email, p }) => {
-  const [id] = p;
-  if (!(await isMember(env, id, email))) return error("forbidden", 403);
+// One validator for both callers: bills and payments share the upload path, only the prefix differs.
+on("POST", "/api/groups/:id/bills/images", ({ req, env, email, p }) => uploadImage(req, env, email, p[0], "bills"));
+on("POST", "/api/groups/:id/payments/images", ({ req, env, email, p }) => uploadImage(req, env, email, p[0], "payments"));
+
+async function uploadImage(req: Request, env: Env, email: string, groupId: string, kind: "bills" | "payments") {
+  if (!(await isMember(env, groupId, email))) return error("forbidden", 403);
   const form = await req.formData().catch(() => null);
   const file = form?.get("file");
   if (!(file instanceof File)) return error("file field required");
   if (!file.type.startsWith("image/")) return error("only images are allowed");
   if (file.size > 8 * 1024 * 1024) return error("image must be under 8 MB");
-  const ext = (file.name.split(".").pop() ?? "").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 8) || "bin";
-  const key = `${id}/${crypto.randomUUID()}.${ext}`;
+  const key = uploadKey(kind, groupId, extOf(file));
   await env.IMAGES.put(key, file, { httpMetadata: { contentType: file.type } });
   await env.DB.prepare("INSERT INTO uploads (key, group_id, created_at) VALUES (?, ?, ?)")
-    .bind(key, id, new Date().toISOString())
+    .bind(key, groupId, new Date().toISOString())
     .run();
   return json({ key, url: `/img/${key}` }, 201);
+}
+
+// --- profile QR ---
+
+// A person's payment QR is visible to anyone who shares a group with them, which is the same audience
+// that already sees their transfers in the summary.
+async function canSeeQr(env: Env, viewer: string, owner: string) {
+  if (viewer === owner) return true;
+  const row = await env.DB.prepare(
+    `SELECT 1 AS ok FROM members a JOIN members b ON a.group_id = b.group_id
+     WHERE a.email = ? AND b.email = ? LIMIT 1`,
+  )
+    .bind(viewer, owner)
+    .first();
+  return !!row;
+}
+
+on("POST", "/api/me/qr", async ({ req, env, email }) => {
+  const form = await req.formData().catch(() => null);
+  const file = form?.get("file");
+  if (!(file instanceof File)) return error("file field required");
+  if (!file.type.startsWith("image/")) return error("only images are allowed");
+  if (file.size > 8 * 1024 * 1024) return error("image must be under 8 MB");
+  await env.IMAGES.put(qrKey(email), file, { httpMetadata: { contentType: file.type } });
+  return json({ qr: qrUrl(email) }, 201);
+});
+
+on("DELETE", "/api/me/qr", async ({ env, email }) => {
+  await env.IMAGES.delete(qrKey(email)).catch(() => undefined);
+  return json({ qr: null });
 });
 
 async function serveImage(env: Env, email: string, key: string) {
-  const m = /^([0-9a-f-]{36})\/[A-Za-z0-9-]+\.[a-z0-9]{1,8}$/.exec(key);
-  if (!m) return error("not found", 404);
-  if (!(await isMember(env, m[1], email))) return error("forbidden", 403);
+  const qr = /^qrs\/([^/]+)$/.exec(key);
+  if (qr) {
+    if (!(await canSeeQr(env, email, decodeURIComponent(qr[1])))) return error("forbidden", 403);
+  } else {
+    const m = KEY_RE.exec(key);
+    if (!m) return error("not found", 404);
+    if (!(await isMember(env, m[1], email))) return error("forbidden", 403);
+  }
   const obj = await env.IMAGES.get(key);
   if (!obj) return error("not found", 404);
   return new Response(obj.body, {
