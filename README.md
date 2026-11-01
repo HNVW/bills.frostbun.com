@@ -155,6 +155,8 @@ one image per entry, 8 MB per image, `limit` capped at 50. Amounts are positive 
   ≤8 MB, image/*. The Worker owns the key, so the client cannot name an object; it sends the returned key back as
   `image` and the Worker stores it only if it matches the derived key. Ids are minted client-side so the image can be
   uploaded before the row exists; `POST` rejects a reused id with `409`.
+- Content type is not trusted from storage: keys have no extension and some tools (rclone) always write
+  `application/octet-stream`, so `serveImage` falls back to magic-byte sniffing on a 12-byte ranged read.
 - No orphan sweep: there is no `uploads` table and no cron. An entry's object is deleted by exact key on edit/delete.
   Group deletion lists by prefix (`deletePrefix`) so images uploaded for never-saved entries are removed too.
 - Keys written before the layout split (`<group-id>/<uuid>.<ext>`) are still served (`LEGACY_RE`); see `migrations/`.
