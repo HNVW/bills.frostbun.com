@@ -5,8 +5,12 @@ Installable as a PWA; bills involving you arrive as Web Push notifications.
 
 ## Setup
 
-1. Pick the deploy account: the one behind the org `CLOUDFLARE_API_TOKEN` (`Manhnb1911@gmail.com`). It owns the
-   `frostbun.com` zone.
+`wrangler.jsonc` holds the only account-specific values: the D1 `database_id` and the `routes` pattern. Nothing else
+ties the app to one account, so porting means editing those two fields; the Worker code contains no hostname or
+account id.
+
+1. Set `routes[0].pattern` to a hostname in the deploying account's zone. To deploy without a custom domain, delete
+   `routes` and set `workers_dev: true`; put the Access application on the `*.workers.dev` hostname instead.
 2. Create the resources by hand — `bunx wrangler deploy` does not create them, because `wrangler.jsonc` pins both ids/names:
 
    ```
@@ -36,7 +40,8 @@ Installable as a PWA; bills involving you arrive as Web Push notifications.
    `https:` are both valid, an `https:` URL on your own domain being the choice that exposes no address.
 
    Generate a keypair with `bunx web-push generate-vapid-keys`, or the ECDSA P-256 equivalent. Without the secrets, push
-   is skipped and everything else works.
+   is skipped and everything else works. `VAPID_SUBJECT` has no default: unset, the Worker logs
+   `push skipped: VAPID_SUBJECT is not set` and sends nothing.
 3. Cloudflare Access application for `bills.frostbun.com`, policy = your friends' emails.
    Access injects `Cf-Access-Authenticated-User-Email`; the worker uses it as the user id. No passwords.
    `workers_dev` is off, so that domain is the only entry point.
