@@ -157,6 +157,9 @@ one image per entry, 8 MB per image, `limit` capped at 50. Amounts are positive 
   uploaded before the row exists; `POST` rejects a reused id with `409`.
 - Content type is not trusted from storage: keys have no extension and some tools (rclone) always write
   `application/octet-stream`, so `serveImage` falls back to magic-byte sniffing on a 12-byte ranged read.
+- Keys must start at the bucket root: the Worker serves `/img/<key>` where `<key>` is exactly `bills/<group>/<entry>`,
+  `payments/<group>/<entry>` or `qrs/<email>`. Uploading through a folder prefix (e.g. `rclone copy dir personal:bills/dir`)
+  produces `dir/bills/...`, which reads as a 404.
 - No orphan sweep: there is no `uploads` table and no cron. An entry's object is deleted by exact key on edit/delete.
   Group deletion lists by prefix (`deletePrefix`) so images uploaded for never-saved entries are removed too.
 - Keys written before the layout split (`<group-id>/<uuid>.<ext>`) are still served (`LEGACY_RE`); see `migrations/`.
