@@ -155,8 +155,10 @@ one image per entry, 8 MB per image, `limit` capped at 50. Amounts are positive 
   ≤8 MB, image/*. The Worker owns the key, so the client cannot name an object; it sends the returned key back as
   `image` and the Worker stores it only if it matches the derived key. Ids are minted client-side so the image can be
   uploaded before the row exists; `POST` rejects a reused id with `409`.
-- Content type is not trusted from storage: keys have no extension and some tools (rclone) always write
-  `application/octet-stream`, so `serveImage` falls back to magic-byte sniffing on a 12-byte ranged read.
+- Keys carry no extension, so `serveImage` serves R2's stored `httpMetadata.contentType`. Uploads made through the
+  app always set it. Bulk uploads must set it explicitly: rclone derives the type from the *destination key* and
+  writes `application/octet-stream` for extensionless keys (its `--header-upload`/`--metadata-set` flags are ignored
+  by the S3 backend). Use an S3 client with `ContentType`, e.g. `put_object(..., ContentType="image/jpeg")`.
 - Keys must start at the bucket root: the Worker serves `/img/<key>` where `<key>` is exactly `bills/<group>/<entry>`,
   `payments/<group>/<entry>` or `qrs/<email>`. Uploading through a folder prefix (e.g. `rclone copy dir personal:bills/dir`)
   produces `dir/bills/...`, which reads as a 404.

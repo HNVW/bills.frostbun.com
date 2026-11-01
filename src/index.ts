@@ -705,22 +705,6 @@ on("DELETE", "/api/me/qr", async ({ env, email }) => {
   return json({ qr: null });
 });
 
-// Only the first bytes matter, so this stops as soon as the format is decided.
-const MAGIC: [string, number[]][] = [
-  ["image/jpeg", [0xff, 0xd8, 0xff]],
-  ["image/png", [0x89, 0x50, 0x4e, 0x47]],
-  ["image/gif", [0x47, 0x49, 0x46, 0x38]],
-  ["image/webp", [0x52, 0x49, 0x46, 0x46]],
-];
-
-async function sniffType(env: Env, key: string) {
-  const head = await env.IMAGES.get(key, { range: { offset: 0, length: 12 } });
-  if (!head) return "application/octet-stream";
-  const bytes = new Uint8Array(await head.arrayBuffer());
-  for (const [type, sig] of MAGIC) if (sig.every((b, i) => bytes[i] === b)) return type;
-  return "application/octet-stream";
-}
-
 async function serveImage(env: Env, email: string, key: string) {
   const qr = /^qrs\/([^/]+)$/.exec(key);
   const entry = /^(bills|payments)\/([0-9a-f-]{36})\/[0-9a-f-]{36}$/.exec(key);
@@ -734,12 +718,9 @@ async function serveImage(env: Env, email: string, key: string) {
   } else return error("not found", 404);
   const obj = await env.IMAGES.get(key);
   if (!obj) return error("not found", 404);
-  // Keys carry no extension and uploads may arrive with a generic type (rclone always stores
-  // application/octet-stream), so fall back to the magic bytes the browser will render anyway.
-  const stored = obj.httpMetadata?.contentType;
   return new Response(obj.body, {
     headers: {
-      "content-type": stored && stored !== "application/octet-stream" ? stored : await sniffType(env, key),
+      "content-type": obj.httpMetadata?.contentType ?? "application/octet-stream",
       etag: obj.httpEtag,
       "cache-control": "private, max-age=86400",
     },
