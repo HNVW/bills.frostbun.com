@@ -65,6 +65,28 @@ bun run deploy
 needs `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in the org secrets). Schema changes are not part of the deploy:
 apply `migrations/*.sql` yourself.
 
+Existing databases need the `images` → `image` and `users.qr` change before the new Worker is deployed:
+
+```sql
+ALTER TABLE bills RENAME COLUMN images TO images_old;
+ALTER TABLE bills ADD COLUMN image TEXT;
+ALTER TABLE payments RENAME COLUMN images TO images_old;
+ALTER TABLE payments ADD COLUMN image TEXT;
+DROP TABLE IF EXISTS uploads;
+
+UPDATE bills SET image = CASE WHEN INSTR(SUBSTR(images_old, 3), '"') > 0
+  THEN SUBSTR(images_old, 3, INSTR(SUBSTR(images_old, 3), '"') - 1) END WHERE images_old LIKE '["%';
+UPDATE payments SET image = CASE WHEN INSTR(SUBSTR(images_old, 3), '"') > 0
+  THEN SUBSTR(images_old, 3, INSTR(SUBSTR(images_old, 3), '"') - 1) END WHERE images_old LIKE '["%';
+
+ALTER TABLE bills DROP COLUMN images_old;
+ALTER TABLE payments DROP COLUMN images_old;
+ALTER TABLE users ADD COLUMN qr TEXT;
+```
+
+Bills that had several images keep the first; the rest stay in R2 but are unreferenced. Old keys are still served, so
+nothing 404s, and `ALTER TABLE … DROP COLUMN` needs a recent D1 SQLite (it is supported now).
+
 ## Routes
 
 - `GET /` — your groups.
@@ -99,22 +121,22 @@ needs no prior membership — it is how you join.
 | `GET·POST /api/groups/:id/payments` | list / create payment |
 | `PATCH·DELETE /api/groups/:id/payments/:paymentId` | edit / delete payment |
 | `GET /api/groups/:id/summary` | totals, balances, settle-up transfers |
-| `POST /api/groups/:id/bills/images` | upload a bill image |
-| `POST /api/groups/:id/payments/images` | upload a payment image |
+| `POST /api/groups/:id/bills/:billId/image` | upload this bill's image (one per bill) |
+| `POST /api/groups/:id/payments/:paymentId/image` | upload this payment's image (one per payment) |
 | `GET·PATCH /api/me` | your name and QR (`qr` is a URL or `null`) |
 | `POST·DELETE /api/me/qr` | upload / remove your payment QR (multipart `file`) |
 | `POST /api/join/:token` | join a group |
 
 Limits: group and display names 1–80 and 1–60 chars, bill title 200 chars (truncated), at least one involved member,
-10 images per entry, 8 MB per image, `limit` capped at 50. Amounts are positive integers in đồng; the form groups digits with Vietnamese dots (`100.000`) and sends the bare number. Errors are `{error}` with `400` (invalid input),
+one image per entry, 8 MB per image, `limit` capped at 50. Amounts are positive integers in đồng; the form groups digits with Vietnamese dots (`100.000`) and sends the bare number. Errors are `{error}` with `400` (invalid input),
 `401` (no Access identity), `403` (not a member / not the creator), `404`, or `409` (referenced image vanished).
 
 ## Data
 
 - `groups(id, name, created_by, invite_token, …)`, `members(group_id, email)`,
-  `bills(amount VND integer, paid_by, participants JSON, images JSON)`, `payments(from, to, amount, images)`,
-  `users(email, name)`, `uploads(key, group_id, created_at)`, `push_subscriptions(endpoint, email, p256dh, auth)`.
-- `users(email, name)` is the display name. Default is the Access identity name, fetched once from
+  `bills(amount VND integer, paid_by, participants JSON, image)`, `payments(from, to, amount, image)`,
+  `users(email, name, qr)`, `push_subscriptions(endpoint, email, p256dh, auth)`.
+- `users(email, name)` is the display name, `users.qr` the optional payment-QR key. Default is the Access identity name, fetched once from
   `/cdn-cgi/access/get-identity` (the app JWT has no name claim) and stored; an email-valued row is re-defaulted on the
   next visit. Override with `PATCH /api/me {"name"}` (the nav button). Email stays the credential.
 - Log out is the Access logout endpoint: `/cdn-cgi/access/logout`.
@@ -127,19 +149,18 @@ Limits: group and display names 1–80 and 1–60 chars, bill title 200 chars (t
   `POST /api/join/:token` adds the signed-in caller and returns the group (idempotent; rotating invalidates the old token).
 - Membership is the whole permission model: any member can create, edit and delete any bill or payment in the group;
   only the creator can rename/delete the group or remove other members.
-- R2 layout: `<bucket>/qrs/<email>`, `<bucket>/bills/<group-id>/<uuid>.<ext>`, `<bucket>/payments/<group-id>/<uuid>.<ext>`.
-  Keys are produced only by the Worker (`qrKey`, `uploadKey`).
-- Images: `POST /api/groups/:id/bills/images` or `.../payments/images` (multipart `file`, ≤8 MB, image/*) returns a key;
-  pass keys in `images`. A bill accepts only `bills/<group-id>/` keys and a payment only `payments/<group-id>/`, and
-  saving checks each object still exists (`409` otherwise). A key can be referenced by only its own kind.
-- Uploads stored before the layout split (`<group-id>/<uuid>.<ext>`) are still accepted and served; `KEY_RE` and
-  `parseImages` keep both shapes so existing bills stay editable. Nothing was migrated.
-- Personal QR: `POST /api/me/qr` stores `qrs/<email>` in R2 (no D1 column — presence is `HEAD`ed). It is readable by
-  you and by anyone sharing a group with you (`canSeeQr`), served through `/img/qrs/<email>`. Clicking a name in a
-  group's summary opens it; the nav name opens a dialog to edit your display name and replace/remove the QR.
-- Uploads are tracked in `uploads(key, group_id, created_at)` until referenced; deleting a bill/payment/group deletes
-  its objects. A daily cron (`0 0 * * *`, 00:00 UTC) deletes tracked objects older than 1 hour that no bill or payment
-  references, so nothing exists in R2 that D1 does not know about.
+- R2 layout: `qrs/<email>`, `bills/<group-id>/<bill-id>`, `payments/<group-id>/<payment-id>`. One object per entry,
+  and its key is a pure function of the entry (`entryKey`, `qrKey`) — no uuid or extension, no metadata to keep.
+- Image upload: `POST /api/groups/:id/bills/:billId/image` (or `.../payments/:paymentId/image`), multipart `file`,
+  ≤8 MB, image/*. The Worker owns the key, so the client cannot name an object; it sends the returned key back as
+  `image` and the Worker stores it only if it matches the derived key. Ids are minted client-side so the image can be
+  uploaded before the row exists; `POST` rejects a reused id with `409`.
+- No orphan sweep: there is no `uploads` table and no cron. An entry's object is deleted by exact key on edit/delete.
+  Group deletion lists by prefix (`deletePrefix`) so images uploaded for never-saved entries are removed too.
+- Keys written before the layout split (`<group-id>/<uuid>.<ext>`) are still served (`LEGACY_RE`); see `migrations/`.
+- Personal QR: `POST /api/me/qr` stores the key in `users.qr` (`qrs/<email>`) and the object in R2; `DELETE` clears
+  both. Readable by you and by anyone sharing a group with you (`canSeeQr`), served at `/img/qrs/<email>`. Clicking a
+  name in a group's summary opens it; the nav name opens a dialog to edit your display name and replace/remove the QR.
 - One push subscription per user per browser: subscribing replaces that user's previous rows (browsers rotate the
   endpoint on every resubscribe), and endpoints answering `404`/`410` are deleted on the next send.
 - Balance display is from the viewer's side: `22.500 ₫` in red (`--attention`) means you must pay that much, `−30.000 ₫`

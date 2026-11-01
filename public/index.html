@@ -103,15 +103,16 @@ function fail(err) {
   alert(err.message || err);
 }
 
-async function uploadFiles(groupId, kind, files) {
-  const keys = [];
-  for (const file of files) {
-    const fd = new FormData();
-    fd.append("file", file);
-    keys.push((await api(`/api/groups/${groupId}/${kind}/images`, { method: "POST", body: fd })).key);
-  }
-  return keys;
+// One image per entry, stored at a key the Worker derives from the entry id.
+async function uploadImage(groupId, kind, entryId, file) {
+  const fd = new FormData();
+  fd.append("file", file);
+  const { key } = await api(`/api/groups/${groupId}/${kind}/${entryId}/image`, { method: "POST", body: fd });
+  return key;
 }
+
+// Ids are minted client-side so the image can be uploaded before the entry is created.
+const newId = () => crypto.randomUUID();
 
 /* ---------- notifications ---------- */
 
@@ -325,7 +326,7 @@ async function viewGroup(id) {
       <fieldset class="checks"><legend>Involved</legend>
         ${members.map((m) => `<label class="check"><input type="checkbox" name="participants" value="${esc(m.email)}" checked> ${esc(m.name)}</label>`).join("")}
       </fieldset>
-      <label>Images<input name="files" type="file" accept="image/*" multiple></label>
+      <label>Image<input name="file" type="file" accept="image/*"></label>
       <div class="thumbs" id="bill-thumbs"></div>
       <div class="row"><button>Save bill</button></div>
     </form>
@@ -347,7 +348,7 @@ async function viewGroup(id) {
       <label>To<select name="to">${members.map((m) => `<option value="${esc(m.email)}">${esc(m.name)}</option>`).join("")}</select></label>
       <label>Amount (VND)<input name="amount" type="text" inputmode="numeric" autocomplete="off" placeholder="100.000" required>
       </label>
-      <label>Images<input name="files" type="file" accept="image/*" multiple></label>
+      <label>Image<input name="file" type="file" accept="image/*"></label>
       <div class="thumbs" id="pay-thumbs"></div>
       <div class="row"><button>Save payment</button></div>
     </form>
@@ -361,11 +362,11 @@ async function viewGroup(id) {
     </dialog>
 `;
 
-  const thumbsHTML = (imgs) => imgs.map((k) => `<figure><img src="/img/${k}" alt=""><button data-remove="${esc(k)}" title="Remove">×</button></figure>`).join("");
-  const state = { billImages: [], payImages: [] };
+  const thumbHTML = (key) => (key ? `<figure><img src="/img/${key}" alt=""><button data-remove="${esc(key)}" title="Remove">×</button></figure>` : "");
+  const state = { billImage: null, payImage: null, billId: null, payId: null };
 
   function drawThumbs(which) {
-    $(`#${which === "bill" ? "bill" : "pay"}-thumbs`).innerHTML = thumbsHTML(state[`${which}Images`]);
+    $(`#${which === "bill" ? "bill" : "pay"}-thumbs`).innerHTML = thumbHTML(state[which === "bill" ? "billImage" : "payImage"]);
   }
 
   const billForm = $("#bill-form"), payForm = $("#pay-form");
@@ -385,7 +386,8 @@ async function viewGroup(id) {
     billForm.elements.id.value = "";
     $("#bill-title").textContent = "Add bill";
     setParticipants(members.map((m) => m.email));
-    state.billImages = [];
+    state.billImage = null;
+    state.billId = newId();
     drawThumbs("bill");
     $("#bill-dialog").showModal();
   }
@@ -396,10 +398,13 @@ async function viewGroup(id) {
     const participants = participantBoxes().filter((b) => b.checked).map((b) => b.value);
     if (!participants.length) return fail(new Error("pick at least one involved person"));
     try {
-      const images = [...state.billImages, ...(await uploadFiles(id, "bills", f.elements.files.files))];
+      const file = f.elements.file.files[0];
+      state.billId ||= newId();
+      const image = file ? await uploadImage(id, "bills", state.billId, file) : state.billImage;
       const body = {
+        id: state.billId,
         title: f.elements.title.value, amount: amountValue(f.elements.amount), paidBy: f.elements.paidBy.value,
-        participants, images,
+        participants, image,
       };
       if (f.elements.id.value) await api(`/api/groups/${id}/bills/${f.elements.id.value}`, { method: "PATCH", body: JSON.stringify(body) });
       else await api(`/api/groups/${id}/bills`, { method: "POST", body: JSON.stringify(body) });
@@ -423,7 +428,8 @@ async function viewGroup(id) {
     billForm.elements.amount.value = Number(b.amount).toLocaleString("vi-VN");
     billForm.elements.paidBy.value = b.paidBy;
     setParticipants(b.participants);
-    state.billImages = [...b.images];
+    state.billId = b.id;
+    state.billImage = b.image;
     drawThumbs("bill");
     $("#bill-title").textContent = "Edit bill";
     $("#bill-dialog").showModal();
@@ -455,13 +461,13 @@ async function viewGroup(id) {
 
 
 
-  function showDetails(title, lines, images) {
+  function showDetails(title, lines, image) {
     $("#detail-title").textContent = title;
     $("#detail-body").innerHTML =
       lines.map((l) => `<div>${l}</div>`).join("") +
-      (images.length
-        ? `<div class="thumbs">${images.map((k) => `<a href="/img/${k}" target="_blank" rel="noopener"><img src="/img/${k}" alt=""></a>`).join("")}</div>`
-        : '<p class="muted">No images.</p>');
+      (image
+        ? `<div class="thumbs"><a href="/img/${image}" target="_blank" rel="noopener"><img src="/img/${image}" alt=""></a></div>`
+        : '<p class="muted">No image.</p>');
     $("#detail-dialog").showModal();
   }
 
@@ -469,7 +475,8 @@ async function viewGroup(id) {
     payForm.reset();
     payForm.elements.id.value = "";
     $("#pay-title").textContent = "Add payment";
-    state.payImages = [];
+    state.payImage = null;
+    state.payId = newId();
     drawThumbs("pay");
     $("#pay-dialog").showModal();
   }
@@ -478,8 +485,10 @@ async function viewGroup(id) {
     e.preventDefault();
     const f = payForm;
     try {
-      const images = [...state.payImages, ...(await uploadFiles(id, "payments", f.elements.files.files))];
-      const body = { from: f.elements.from.value, to: f.elements.to.value, amount: amountValue(f.elements.amount), images };
+      const file = f.elements.file.files[0];
+      state.payId ||= newId();
+      const image = file ? await uploadImage(id, "payments", state.payId, file) : state.payImage;
+      const body = { id: state.payId, from: f.elements.from.value, to: f.elements.to.value, amount: amountValue(f.elements.amount), image };
       if (f.elements.id.value) await api(`/api/groups/${id}/payments/${f.elements.id.value}`, { method: "PATCH", body: JSON.stringify(body) });
       else await api(`/api/groups/${id}/payments`, { method: "POST", body: JSON.stringify(body) });
       render();
@@ -491,7 +500,8 @@ async function viewGroup(id) {
     payForm.elements.from.value = p.from;
     payForm.elements.to.value = p.to;
     payForm.elements.amount.value = Number(p.amount).toLocaleString("vi-VN");
-    state.payImages = [...p.images];
+    state.payId = p.id;
+    state.payImage = p.image;
     drawThumbs("pay");
     $("#pay-title").textContent = "Edit payment";
     $("#pay-dialog").showModal();
@@ -507,21 +517,21 @@ async function viewGroup(id) {
           `Paid by: ${esc(who(b.paidBy))}`,
           `Involved (${b.participants.length}): ${b.participants.map((e) => esc(who(e))).join(", ")}`,
           `<span class="muted">${new Date(b.createdAt).toLocaleString()}</span>`,
-        ], b.images);
+        ], b.image);
       } else if (t.dataset.detailsPay) {
         const p = payments.find((x) => x.id === t.dataset.detailsPay);
         showDetails(`${who(p.from)} → ${who(p.to)}`, [
           `Amount: <span class="money">${vnd(p.amount)}</span>`,
           `<span class="muted">${new Date(p.createdAt).toLocaleString()}</span>`,
-        ], p.images);
+        ], p.image);
       } else if (t.dataset.qr) showQr(members.find((m) => m.email === t.dataset.qr));
       else if (t.dataset.members) $("#members-dialog").showModal();
       else if (t.dataset.newBill) { t.closest("details").open = true; resetBill(); }
       else if (t.dataset.newPay) { t.closest("details").open = true; resetPay(); }
       else if (t.dataset.close) $("#" + t.dataset.close).close();
       else if (t.dataset.remove) {
-        if (state.billImages.includes(t.dataset.remove)) { state.billImages = state.billImages.filter((k) => k !== t.dataset.remove); drawThumbs("bill"); }
-        else { state.payImages = state.payImages.filter((k) => k !== t.dataset.remove); drawThumbs("pay"); }
+        if (state.billImage === t.dataset.remove) { state.billImage = null; drawThumbs("bill"); }
+        else { state.payImage = null; drawThumbs("pay"); }
       } else if (t.dataset.editBill) editBill(bills.find((b) => b.id === t.dataset.editBill));
       else if (t.dataset.editPay) editPay(payments.find((p) => p.id === t.dataset.editPay));
       else if (t.dataset.delBill) {

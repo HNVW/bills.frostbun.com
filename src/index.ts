@@ -72,79 +72,38 @@ async function isMember(env: Env, groupId: string, email: string) {
 
 async function membersOf(env: Env, groupId: string) {
   const { results } = await env.DB.prepare(
-    `SELECT m.email, COALESCE(u.name, m.email) AS name
+    `SELECT m.email, COALESCE(u.name, m.email) AS name, u.qr AS qr
      FROM members m LEFT JOIN users u ON u.email = m.email
      WHERE m.group_id = ? ORDER BY m.created_at, m.email`,
   )
     .bind(groupId)
-    .all<{ email: string; name: string }>();
-  // Members carry a stable QR URL; the object may not exist, so the UI hides a failed load.
-  return results.map((m) => ({ ...m, qr: qrUrl(m.email) }));
+    .all<{ email: string; name: string; qr: string | null }>();
+  return results.map((m) => ({ ...m, qr: qrUrl(m.qr) }));
 }
 
-// R2 layout: {qrs,bills,payments}/<id or email>[/<uuid>.<ext>]. Every key is produced here and nowhere else.
-const QR_EMAIL = /^[^/]+@[^/]+$/;
+// R2 layout: `qrs/<email>`, `<kind>/<group-id>/<entry-id>`. Every key is produced here and nowhere else.
 const qrKey = (email: string) => `qrs/${email}`;
-const qrUrl = (email: string) => `/img/${qrKey(email)}`;
-const uploadKey = (kind: "bills" | "payments", groupId: string, ext: string) =>
-  `${kind}/${groupId}/${crypto.randomUUID()}.${ext}`;
-
-function extOf(file: File) {
-  const ext = (file.name.split(".").pop() ?? "").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 8);
-  return IMAGE_TYPES[file.type] ?? (ext || "bin");
-}
-
-// Content type is derived from the extension on the way back out, so the key carries no metadata.
-const IMAGE_TYPES: Record<string, string> = {
-  "image/jpeg": "jpg",
-  "image/png": "png",
-  "image/webp": "webp",
-  "image/gif": "gif",
-  "image/avif": "avif",
-  "image/heic": "heic",
-};
-const TYPE_OF_EXT: Record<string, string> = Object.fromEntries(
-  Object.entries(IMAGE_TYPES).map(([type, ext]) => [ext, type]),
-);
+const qrUrl = (key: string | null) => (key ? `/img/${key}` : null);
+// One object per entry, at a key derived from the entry: no listing, no bookkeeping, nothing to sweep.
+const entryKey = (kind: "bills" | "payments", groupId: string, entryId: string) => `${kind}/${groupId}/${entryId}`;
 
 // `<kind>/<id>/<uuid>.<ext>` for bills and payments; `qrs/<email>` for a person's payment QR.
-// Keys written before the split lived at `<id>/<uuid>.<ext>`; those objects are still served as-is.
-const KEY_RE = /^(?:(?:bills|payments)\/)?([0-9a-f-]{36})\/[A-Za-z0-9-]+\.[a-z0-9]{1,8}$/;
+// Keys written before the layout split (`<group-id>/<uuid>.<ext>`) are still served; nothing was migrated.
+const LEGACY_RE = /^([0-9a-f-]{36})\/[A-Za-z0-9-]+\.[a-z0-9]{1,8}$/;
 
 async function deleteImages(env: Env, keys: string[]) {
   await Promise.all(keys.map((k) => env.IMAGES.delete(k).catch(() => undefined)));
 }
 
-// Uploads are tracked until a bill/payment references them, so nothing can become unreachable silently.
-// The sweep only touches tracked keys older than the grace window; saving verifies the object still exists.
-const UPLOAD_TTL_MS = 60 * 60 * 1000;
-
-async function referencedImages(env: Env) {
-  const referenced = new Set<string>();
-  for (const table of ["bills", "payments"]) {
-    const { results } = await env.DB.prepare(`SELECT images FROM ${table}`).all<{ images: string }>();
-    for (const r of results) for (const k of parse(r.images, [])) referenced.add(k);
+// Uploading for an entry id before saving leaves an object behind if the form is abandoned, so a group
+// delete sweeps by prefix rather than trusting D1. Nothing schedules this; deletion is the only leak path.
+async function deletePrefix(env: Env, prefix: string) {
+  for (;;) {
+    const { objects } = await env.IMAGES.list({ prefix, limit: 1000 });
+    if (!objects.length) return;
+    await deleteImages(env, objects.map((o) => o.key));
+    if (objects.length < 1000) return;
   }
-  return referenced;
-}
-
-async function untrackUploads(env: Env, keys: string[]) {
-  if (!keys.length) return;
-  await env.DB.batch(keys.map((k) => env.DB.prepare("DELETE FROM uploads WHERE key = ?").bind(k)));
-}
-
-async function collectOrphanImages(env: Env) {
-  const cutoff = new Date(Date.now() - UPLOAD_TTL_MS).toISOString();
-  const { results } = await env.DB.prepare("SELECT key FROM uploads WHERE created_at <= ?").bind(cutoff).all<{ key: string }>();
-  if (!results.length) return 0;
-  const referenced = await referencedImages(env);
-  const stale = results.map((r) => r.key).filter((k) => !referenced.has(k));
-  await Promise.all(stale.map((k) => env.IMAGES.delete(k).catch(() => undefined)));
-  await env.DB.batch([
-    env.DB.prepare("DELETE FROM uploads WHERE created_at <= ?").bind(cutoff),
-    ...stale.map((k) => env.DB.prepare("DELETE FROM uploads WHERE key = ?").bind(k)),
-  ]);
-  return stale.length;
 }
 
 async function displayName(env: Env, email: string) {
@@ -237,7 +196,7 @@ const billOut = (b: Record<string, unknown>) => ({
   amount: b.amount,
   paidBy: b.paid_by,
   participants: parse(b.participants as string, []),
-  images: parse(b.images as string, []),
+  image: b.image ?? null,
   createdBy: b.created_by,
   createdAt: b.created_at,
 });
@@ -248,7 +207,7 @@ const paymentOut = (p: Record<string, unknown>) => ({
   from: p.from_email,
   to: p.to_email,
   amount: p.amount,
-  images: parse(p.images as string, []),
+  image: p.image ?? null,
   createdBy: p.created_by,
   createdAt: p.created_at,
 });
@@ -267,22 +226,12 @@ function parseParticipants(v: unknown, allowed: Set<string>, fallback: string): 
   return out;
 }
 
-async function missingObjects(env: Env, keys: string[]) {
-  for (const key of keys) if (!(await env.IMAGES.head(key))) return key;
-  return "";
-}
+const asId = (v: unknown) => (typeof v === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v) ? v : "");
 
-function parseImages(v: unknown, kind: "bills" | "payments", groupId: string): string[] | null {
-  if (v === undefined || v === null) return [];
-  if (!Array.isArray(v)) return null;
-  // Accepts this kind's new keys and legacy `<group>/...` keys, so editing an old bill keeps its images.
-  const prefixes = [`${kind}/${groupId}/`, `${groupId}/`];
-  const out: string[] = [];
-  for (const k of v) {
-    if (typeof k !== "string" || !prefixes.some((p) => k.startsWith(p)) || k.includes("..")) return null;
-    out.push(k);
-  }
-  return out.slice(0, 10);
+// The key is derived from the entry id, so the client never names an object and there is nothing to validate.
+// A client-sent `image` is compared against the derived key: any other value is dropped, never stored.
+function pickImage(v: unknown, expected: string): string | null {
+  return v === expected ? expected : null;
 }
 
 async function jsonBody(req: Request): Promise<Record<string, unknown>> {
@@ -349,8 +298,10 @@ on("DELETE", "/api/push/subscribe", async ({ req, env, email }) => {
 
 on("GET", "/api/me", async ({ req, env, email }) => {
   await ensureUserName(env, req, email);
-  const row = await env.DB.prepare("SELECT name FROM users WHERE email = ?").bind(email).first<{ name: string }>();
-  return json({ email, name: row?.name ?? email, qr: (await env.IMAGES.head(qrKey(email))) ? qrUrl(email) : null });
+  const row = await env.DB.prepare("SELECT name, qr FROM users WHERE email = ?")
+    .bind(email)
+    .first<{ name: string; qr: string | null }>();
+  return json({ email, name: row?.name ?? email, qr: qrUrl(row?.qr ?? null) });
 });
 
 on("PATCH", "/api/me", async ({ req, env, email }) => {
@@ -361,7 +312,8 @@ on("PATCH", "/api/me", async ({ req, env, email }) => {
   await env.DB.prepare("INSERT INTO users (email, name) VALUES (?, ?) ON CONFLICT (email) DO UPDATE SET name = excluded.name")
     .bind(email, name)
     .run();
-  return json({ email, name, qr: (await env.IMAGES.head(qrKey(email))) ? qrUrl(email) : null });
+  const row = await env.DB.prepare("SELECT qr FROM users WHERE email = ?").bind(email).first<{ qr: string | null }>();
+  return json({ email, name, qr: qrUrl(row?.qr ?? null) });
 });
 
 // "Recently updated" = last bill or payment, falling back to creation.
@@ -441,20 +393,12 @@ on("DELETE", "/api/groups/:id", async ({ env, email, p }) => {
 });
 
 async function removeGroupData(env: Env, id: string) {
-  const keys: string[] = [];
-  for (const table of ["bills", "payments"]) {
-    const { results } = await env.DB.prepare(`SELECT images FROM ${table} WHERE group_id = ?`)
-      .bind(id)
-      .all<{ images: string }>();
-    for (const r of results) keys.push(...parse(r.images, []));
-  }
-  const { results: tracked } = await env.DB.prepare("SELECT key FROM uploads WHERE group_id = ?").bind(id).all<{ key: string }>();
-  await deleteImages(env, [...keys, ...tracked.map((t) => t.key)]);
+  // Prefixes, not ids: this also removes images uploaded for entries that were never saved.
+  await Promise.all([deletePrefix(env, `bills/${id}/`), deletePrefix(env, `payments/${id}/`), deletePrefix(env, `${id}/`)]);
   await env.DB.batch([
     env.DB.prepare("DELETE FROM bills WHERE group_id = ?").bind(id),
     env.DB.prepare("DELETE FROM payments WHERE group_id = ?").bind(id),
     env.DB.prepare("DELETE FROM members WHERE group_id = ?").bind(id),
-    env.DB.prepare("DELETE FROM uploads WHERE group_id = ?").bind(id),
     env.DB.prepare("DELETE FROM groups WHERE id = ?").bind(id),
   ]);
 }
@@ -513,28 +457,30 @@ on("POST", "/api/groups/:id/bills", async ({ req, env, email, p, ctx }) => {
   if (!allowed.has(paidBy)) return error("paidBy must be a member of this group");
   const participants = parseParticipants(body.participants, allowed, paidBy);
   if (typeof participants === "string") return error(participants);
-  const images = parseImages(body.images, "bills", id);
-  if (!images) return error("images must be keys uploaded for this group");
-  const missing = await missingObjects(env, images);
-  if (missing) return error(`image no longer exists: ${missing}`, 409);
   const title = typeof body.title === "string" ? body.title.trim().slice(0, 200) : "";
+  // The client mints the id so it can upload the image before the row exists; reject a live id instead of
+  // silently adopting someone else's bill.
+  const billId = body.id === undefined ? crypto.randomUUID() : asId(body.id);
+  if (!billId) return error("id must be a UUID");
+  if (await env.DB.prepare("SELECT 1 AS ok FROM bills WHERE id = ?").bind(billId).first()) return error("id already used", 409);
   const bill = {
-    id: crypto.randomUUID(),
+    id: billId,
     title,
     amount,
     paidBy,
     participants,
-    images,
     createdAt: new Date().toISOString(),
     createdBy: email,
   };
+  const image = pickImage(body.image, entryKey("bills", id, bill.id));
+  if (image && !(await env.IMAGES.head(image))) return error("image no longer exists", 409);
   await env.DB.prepare(
-    "INSERT INTO bills (id, group_id, title, amount, paid_by, participants, images, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO bills (id, group_id, title, amount, paid_by, participants, image, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
   )
-    .bind(bill.id, id, bill.title, bill.amount, bill.paidBy, JSON.stringify(participants), JSON.stringify(images), email, bill.createdAt)
+    .bind(bill.id, id, bill.title, bill.amount, bill.paidBy, JSON.stringify(participants), image, email, bill.createdAt)
     .run();
   ctx.waitUntil(notifyBillCreated(env, id, email, bill).catch(() => undefined));
-  return json(bill, 201);
+  return json({ ...bill, image }, 201);
 });
 
 on("PATCH", "/api/groups/:id/bills/:bill", async ({ req, env, email, p }) => {
@@ -553,33 +499,27 @@ on("PATCH", "/api/groups/:id/bills/:bill", async ({ req, env, email, p }) => {
   if (!allowed.has(paidBy as string)) return error("paidBy must be a member of this group");
   const participants = parseParticipants(body.participants ?? current.participants, allowed, paidBy as string);
   if (typeof participants === "string") return error(participants);
-  const images = body.images === undefined ? current.images : parseImages(body.images, "bills", id);
-  if (!images) return error("images must be keys uploaded for this group");
-  const missing = await missingObjects(env, images);
-  if (missing) return error(`image no longer exists: ${missing}`, 409);
   const title = body.title === undefined ? current.title : typeof body.title === "string" ? body.title.trim().slice(0, 200) : current.title;
-  const removed = current.images.filter((k: string) => !images.includes(k));
-  await env.DB.prepare(
-    "UPDATE bills SET title = ?, amount = ?, paid_by = ?, participants = ?, images = ? WHERE id = ? AND group_id = ?",
-  )
-    .bind(title, amount, paidBy, JSON.stringify(participants), JSON.stringify(images), billId, id)
+  const before = (current.image as string | null) ?? null;
+  const image = body.image === undefined ? before : pickImage(body.image, entryKey("bills", id, billId));
+  if (image && image !== before && !(await env.IMAGES.head(image))) return error("image no longer exists", 409);
+  await env.DB.prepare("UPDATE bills SET title = ?, amount = ?, paid_by = ?, participants = ?, image = ? WHERE id = ? AND group_id = ?")
+    .bind(title, amount, paidBy, JSON.stringify(participants), image, billId, id)
     .run();
-  await deleteImages(env, removed);
-  await untrackUploads(env, removed);
-  return json({ ...current, title, amount, paidBy, participants, images });
+  if (before && before !== image) await deleteImages(env, [before]);
+  return json({ ...current, title, amount, paidBy, participants, image });
 });
 
 on("DELETE", "/api/groups/:id/bills/:bill", async ({ env, email, p }) => {
   const [id, billId] = p;
   if (!(await isMember(env, id, email))) return error("forbidden", 403);
-  const row = await env.DB.prepare("SELECT images FROM bills WHERE id = ? AND group_id = ?")
+  const row = await env.DB.prepare("SELECT image FROM bills WHERE id = ? AND group_id = ?")
     .bind(billId, id)
-    .first<{ images: string }>();
+    .first<{ image: string | null }>();
   if (!row) return error("not found", 404);
   await env.DB.prepare("DELETE FROM bills WHERE id = ? AND group_id = ?").bind(billId, id).run();
-  const keys = parse(row.images, []);
-  await deleteImages(env, keys);
-  await untrackUploads(env, keys);
+  // An entry's object lives at its derived key; a legacy row may still point elsewhere, so delete both.
+  await deleteImages(env, [row.image, entryKey("bills", id, billId)].filter(Boolean) as string[]);
   return json({ ok: true });
 });
 
@@ -605,17 +545,18 @@ on("POST", "/api/groups/:id/payments", async ({ req, env, email, p }) => {
   const to = normEmail(body.to);
   if (!allowed.has(from) || !allowed.has(to)) return error("from and to must be members of this group");
   if (from === to) return error("from and to must differ");
-  const images = parseImages(body.images, "payments", id);
-  if (!images) return error("images must be keys uploaded for this group");
-  const missing = await missingObjects(env, images);
-  if (missing) return error(`image no longer exists: ${missing}`, 409);
-  const payment = { id: crypto.randomUUID(), from, to, amount, images, createdBy: email, createdAt: new Date().toISOString() };
+  const payId = body.id === undefined ? crypto.randomUUID() : asId(body.id);
+  if (!payId) return error("id must be a UUID");
+  if (await env.DB.prepare("SELECT 1 AS ok FROM payments WHERE id = ?").bind(payId).first()) return error("id already used", 409);
+  const payment = { id: payId, from, to, amount, createdBy: email, createdAt: new Date().toISOString() };
+  const image = pickImage(body.image, entryKey("payments", id, payment.id));
+  if (image && !(await env.IMAGES.head(image))) return error("image no longer exists", 409);
   await env.DB.prepare(
-    "INSERT INTO payments (id, group_id, from_email, to_email, amount, images, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO payments (id, group_id, from_email, to_email, amount, image, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
   )
-    .bind(payment.id, id, from, to, amount, JSON.stringify(images), email, payment.createdAt)
+    .bind(payment.id, id, from, to, amount, image, email, payment.createdAt)
     .run();
-  return json(payment, 201);
+  return json({ ...payment, image }, 201);
 });
 
 on("PATCH", "/api/groups/:id/payments/:payment", async ({ req, env, email, p }) => {
@@ -634,30 +575,25 @@ on("PATCH", "/api/groups/:id/payments/:payment", async ({ req, env, email, p }) 
   const to = body.to === undefined ? current.to : normEmail(body.to);
   if (!allowed.has(from as string) || !allowed.has(to as string)) return error("from and to must be members of this group");
   if (from === to) return error("from and to must differ");
-  const images = body.images === undefined ? current.images : parseImages(body.images, "payments", id);
-  if (!images) return error("images must be keys uploaded for this group");
-  const missing = await missingObjects(env, images);
-  if (missing) return error(`image no longer exists: ${missing}`, 409);
-  const removed = current.images.filter((k: string) => !images.includes(k));
-  await env.DB.prepare("UPDATE payments SET from_email = ?, to_email = ?, amount = ?, images = ? WHERE id = ? AND group_id = ?")
-    .bind(from, to, amount, JSON.stringify(images), paymentId, id)
+  const before = (current.image as string | null) ?? null;
+  const image = body.image === undefined ? before : pickImage(body.image, entryKey("payments", id, paymentId));
+  if (image && image !== before && !(await env.IMAGES.head(image))) return error("image no longer exists", 409);
+  await env.DB.prepare("UPDATE payments SET from_email = ?, to_email = ?, amount = ?, image = ? WHERE id = ? AND group_id = ?")
+    .bind(from, to, amount, image, paymentId, id)
     .run();
-  await deleteImages(env, removed);
-  await untrackUploads(env, removed);
-  return json({ ...current, from, to, amount, images });
+  if (before && before !== image) await deleteImages(env, [before]);
+  return json({ ...current, from, to, amount, image });
 });
 
 on("DELETE", "/api/groups/:id/payments/:payment", async ({ env, email, p }) => {
   const [id, paymentId] = p;
   if (!(await isMember(env, id, email))) return error("forbidden", 403);
-  const row = await env.DB.prepare("SELECT images FROM payments WHERE id = ? AND group_id = ?")
+  const row = await env.DB.prepare("SELECT image FROM payments WHERE id = ? AND group_id = ?")
     .bind(paymentId, id)
-    .first<{ images: string }>();
+    .first<{ image: string | null }>();
   if (!row) return error("not found", 404);
   await env.DB.prepare("DELETE FROM payments WHERE id = ? AND group_id = ?").bind(paymentId, id).run();
-  const keys = parse(row.images, []);
-  await deleteImages(env, keys);
-  await untrackUploads(env, keys);
+  await deleteImages(env, [row.image, entryKey("payments", id, paymentId)].filter(Boolean) as string[]);
   return json({ ok: true });
 });
 
@@ -712,22 +648,24 @@ on("GET", "/api/groups/:id/summary", async ({ env, email, p }) => {
 
 // --- images ---
 
-// One validator for both callers: bills and payments share the upload path, only the prefix differs.
-on("POST", "/api/groups/:id/bills/images", ({ req, env, email, p }) => uploadImage(req, env, email, p[0], "bills"));
-on("POST", "/api/groups/:id/payments/images", ({ req, env, email, p }) => uploadImage(req, env, email, p[0], "payments"));
+// The object is a function of the entry id, so the client states its intent and the Worker owns the key.
+on("POST", "/api/groups/:id/bills/:bill/image", ({ req, env, email, p }) =>
+  uploadImage(req, env, email, p[0], "bills", p[1]),
+);
+on("POST", "/api/groups/:id/payments/:payment/image", ({ req, env, email, p }) =>
+  uploadImage(req, env, email, p[0], "payments", p[1]),
+);
 
-async function uploadImage(req: Request, env: Env, email: string, groupId: string, kind: "bills" | "payments") {
+async function uploadImage(req: Request, env: Env, email: string, groupId: string, kind: "bills" | "payments", entryId: string) {
   if (!(await isMember(env, groupId, email))) return error("forbidden", 403);
+  if (!/^[0-9a-f-]{36}$/.test(entryId)) return error("invalid id");
   const form = await req.formData().catch(() => null);
   const file = form?.get("file");
   if (!(file instanceof File)) return error("file field required");
   if (!file.type.startsWith("image/")) return error("only images are allowed");
   if (file.size > 8 * 1024 * 1024) return error("image must be under 8 MB");
-  const key = uploadKey(kind, groupId, extOf(file));
+  const key = entryKey(kind, groupId, entryId);
   await env.IMAGES.put(key, file, { httpMetadata: { contentType: file.type } });
-  await env.DB.prepare("INSERT INTO uploads (key, group_id, created_at) VALUES (?, ?, ?)")
-    .bind(key, groupId, new Date().toISOString())
-    .run();
   return json({ key, url: `/img/${key}` }, 201);
 }
 
@@ -753,23 +691,31 @@ on("POST", "/api/me/qr", async ({ req, env, email }) => {
   if (!file.type.startsWith("image/")) return error("only images are allowed");
   if (file.size > 8 * 1024 * 1024) return error("image must be under 8 MB");
   await env.IMAGES.put(qrKey(email), file, { httpMetadata: { contentType: file.type } });
-  return json({ qr: qrUrl(email) }, 201);
+  await env.DB.prepare(
+    "INSERT INTO users (email, name, qr) VALUES (?, ?, ?) ON CONFLICT (email) DO UPDATE SET qr = excluded.qr",
+  )
+    .bind(email, email, qrKey(email))
+    .run();
+  return json({ qr: qrUrl(qrKey(email)) }, 201);
 });
 
 on("DELETE", "/api/me/qr", async ({ env, email }) => {
+  await env.DB.prepare("UPDATE users SET qr = NULL WHERE email = ?").bind(email).run();
   await env.IMAGES.delete(qrKey(email)).catch(() => undefined);
   return json({ qr: null });
 });
 
 async function serveImage(env: Env, email: string, key: string) {
   const qr = /^qrs\/([^/]+)$/.exec(key);
+  const entry = /^(bills|payments)\/([0-9a-f-]{36})\/[0-9a-f-]{36}$/.exec(key);
+  const legacy = LEGACY_RE.exec(key);
   if (qr) {
     if (!(await canSeeQr(env, email, decodeURIComponent(qr[1])))) return error("forbidden", 403);
-  } else {
-    const m = KEY_RE.exec(key);
-    if (!m) return error("not found", 404);
-    if (!(await isMember(env, m[1], email))) return error("forbidden", 403);
-  }
+  } else if (entry) {
+    if (!(await isMember(env, entry[2], email))) return error("forbidden", 403);
+  } else if (legacy) {
+    if (!(await isMember(env, legacy[1], email))) return error("forbidden", 403);
+  } else return error("not found", 404);
   const obj = await env.IMAGES.get(key);
   if (!obj) return error("not found", 404);
   return new Response(obj.body, {
@@ -782,10 +728,6 @@ async function serveImage(env: Env, email: string, key: string) {
 }
 
 export default {
-  async scheduled(_event: ScheduledController, env: Env): Promise<void> {
-    await collectOrphanImages(env);
-  },
-
   async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(req.url);
     const email = normEmail(req.headers.get("cf-access-authenticated-user-email")) || (env.DEV_EMAIL ? normEmail(env.DEV_EMAIL) : "");

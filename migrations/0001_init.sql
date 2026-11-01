@@ -1,7 +1,8 @@
--- Identity: one row per Access email.
+-- Identity: one row per Access email. `qr` is the R2 key of the payment QR (`qrs/<email>`).
 CREATE TABLE IF NOT EXISTS users (
   email TEXT PRIMARY KEY,
-  name TEXT NOT NULL
+  name TEXT NOT NULL,
+  qr TEXT
 );
 
 -- A group, its membership, and its shareable invite link.
@@ -24,7 +25,7 @@ CREATE TABLE IF NOT EXISTS members (
 
 CREATE INDEX IF NOT EXISTS members_email ON members (email);
 
--- Money entries. `participants` and `images` are JSON arrays.
+-- Money entries. `participants` is a JSON array; `image` is the entry's R2 key (`<kind>/<group-id>/<id>`).
 CREATE TABLE IF NOT EXISTS bills (
   id TEXT PRIMARY KEY,
   group_id TEXT NOT NULL,
@@ -32,7 +33,7 @@ CREATE TABLE IF NOT EXISTS bills (
   amount INTEGER NOT NULL CHECK (amount > 0),
   paid_by TEXT NOT NULL,
   participants TEXT NOT NULL,
-  images TEXT NOT NULL DEFAULT '[]',
+  image TEXT,
   created_by TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
@@ -45,19 +46,12 @@ CREATE TABLE IF NOT EXISTS payments (
   from_email TEXT NOT NULL,
   to_email TEXT NOT NULL,
   amount INTEGER NOT NULL CHECK (amount > 0),
-  images TEXT NOT NULL DEFAULT '[]',
+  image TEXT,
   created_by TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS payments_group ON payments (group_id, created_at);
-
--- R2 keys awaiting a bill/payment; the daily sweep deletes unreferenced ones.
-CREATE TABLE IF NOT EXISTS uploads (
-  key TEXT PRIMARY KEY,
-  group_id TEXT NOT NULL,
-  created_at TEXT NOT NULL
-);
 
 -- Web Push subscriptions, one row per browser per user.
 CREATE TABLE IF NOT EXISTS push_subscriptions (
