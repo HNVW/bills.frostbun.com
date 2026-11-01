@@ -52,8 +52,7 @@ bun run dev
 
 `DEV_EMAIL` is the dev-only identity; remove the var to test the real Access headers. `bun run check` typechecks;
 `bun run test` exists but the repo has no test files — verification is manual against `wrangler dev`.
-Add the VAPID variables to `.dev.vars` to exercise push locally; `wrangler dev --test-scheduled` plus
-`GET /__scheduled` runs the orphan sweep on demand.
+Add the VAPID variables to `.dev.vars` to exercise push locally.
 
 ## Deploy
 
@@ -74,7 +73,7 @@ needs `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in the org secrets).
   must be set on the Worker (`wrangler secret put`); with them absent, push is silently skipped.
 - `/manifest.webmanifest`, `/sw.js`, `/icon-{192,512}.png` — installable PWA. The service worker caches the shell for
   offline navigation only; `/api/*` and `/img/*` bypass it, so data is always live (and never readable offline).
-- `/img/<group-id>/<uuid>.<ext>` — images, members of that group only.
+- `/img/<key>` — an entry image or a person's QR, readable by group members (QR: anyone sharing a group).
 
 Every `/api/*` route requires the Access identity (`401` otherwise). The only difference is that `/api/join/:token`
 needs no prior membership — it is how you join.
@@ -83,12 +82,10 @@ needs no prior membership — it is how you join.
 | --- | --- |
 | `GET /api/push/key` | VAPID public key for `pushManager.subscribe` |
 | `POST·DELETE /api/push/subscribe` | register / drop this browser's push subscription |
-| `GET /api/me` | `{email, name, qr}` |
-| `PATCH /api/me` | set display name (returns `name` and `qr`) |
 | `GET /api/groups?q=&limit=&offset=` | your groups with `myBalance`, newest activity first (last bill/payment, else creation); `q` matches the name; defaults `limit=5` |
 | `POST /api/groups` | create a group |
 | `GET /api/groups/:id` | group, members, `inviteToken` |
-| `PATCH /api/groups/:id` | rename (member) |
+| `PATCH /api/groups/:id` | rename (any member) |
 | `DELETE /api/groups/:id` | delete with all data (creator) |
 | `POST /api/groups/:id/invite` | rotate invite token (member) |
 | `POST /api/groups/:id/members` | invite by email (member) |
@@ -100,32 +97,32 @@ needs no prior membership — it is how you join.
 | `GET /api/groups/:id/summary` | totals, balances, settle-up transfers |
 | `POST /api/groups/:id/bills/:billId/image` | upload this bill's image (one per bill) |
 | `POST /api/groups/:id/payments/:paymentId/image` | upload this payment's image (one per payment) |
-| `GET·PATCH /api/me` | your name and QR (`qr` is a URL or `null`) |
+| `GET·PATCH /api/me` | `{email, name, qr}`; PATCH sets the display name (`qr` is a URL or `null`) |
 | `POST·DELETE /api/me/qr` | upload / remove your payment QR (multipart `file`) |
 | `POST /api/join/:token` | join a group |
 
 Limits: group and display names 1–80 and 1–60 chars, bill title 200 chars (truncated), at least one involved member,
 one image per entry, 8 MB per image, `limit` capped at 50. Amounts are positive integers in đồng; the form groups digits with Vietnamese dots (`100.000`) and sends the bare number. Errors are `{error}` with `400` (invalid input),
-`401` (no Access identity), `403` (not a member / not the creator), `404`, or `409` (referenced image vanished).
+`401` (no Access identity), `403` (not a member / not the creator), `404`, or `409` (entry id already used, referenced
+image vanished).
 
 ## Data
 
-- `groups(id, name, created_by, invite_token, …)`, `members(group_id, email)`,
+- `groups(id, name, created_by, invite_token, created_at)`, `members(group_id, email, created_at)`,
   `bills(amount VND integer, paid_by, participants JSON, image)`, `payments(from, to, amount, image)`,
   `users(email, name, qr)`, `push_subscriptions(endpoint, email, p256dh, auth)`.
 - `users(email, name)` is the display name, `users.qr` the optional payment-QR key. Default is the Access identity name, fetched once from
   `/cdn-cgi/access/get-identity` (the app JWT has no name claim) and stored; an email-valued row is re-defaulted on the
   next visit. Override with `PATCH /api/me {"name"}` (the nav button). Email stays the credential.
 - Log out is the Access logout endpoint: `/cdn-cgi/access/logout`.
-- D1 `bills` runs in APAC (`running_in_region: APAC`). R2 `bills` placement is whatever the account first gave the name
-  (the hint is ignored for an existing name).
+- R2 `bills` placement is whatever the account first gave the name (the placement hint is ignored for an existing name).
 - Schema lives in `migrations/0001_init.sql`, one idempotent file covering all tables; re-running it is safe.
 - Invites: each group has an `invite_token`; the members dialog shows `/<host>/join/<token>` plus Copy and Rotate.
   `POST /api/join/:token` adds the signed-in caller and returns the group (idempotent; rotating invalidates the old token).
 - Membership is the whole permission model: any member can create, edit and delete any bill or payment in the group;
-  only the creator can rename/delete the group or remove other members.
-- R2 layout: `qrs/<email>`, `bills/<group-id>/<bill-id>`, `payments/<group-id>/<payment-id>`. One object per entry,
-  and its key is a pure function of the entry (`entryKey`, `qrKey`) — no uuid or extension, no metadata to keep.
+  any member can rename the group or leave it themselves, and only the creator can delete the group or remove others.
+- R2 layout: `qrs/<email>`, `bills/<group-id>/<bill-id>`, `payments/<group-id>/<payment-id>`. One object per entry at
+  a key derived entirely from the entry (`entryKey`, `qrKey`) — no extra random component, no extension.
 - Image upload: `POST /api/groups/:id/bills/:billId/image` (or `.../payments/:paymentId/image`), multipart `file`,
   ≤8 MB, image/*. The Worker owns the key, so the client cannot name an object; it sends the returned key back as
   `image` and the Worker stores it only if it matches the derived key. Ids are minted client-side so the image can be
@@ -136,7 +133,7 @@ one image per entry, 8 MB per image, `limit` capped at 50. Amounts are positive 
   `payments/<group>/<entry>` or `qrs/<email>`. A key under any extra prefix reads as a 404.
 - No orphan sweep: there is no `uploads` table and no cron. An entry's object is deleted by exact key on edit/delete.
   Group deletion lists by prefix (`deletePrefix`) so images uploaded for never-saved entries are removed too.
-- Keys written before the layout split (`<group-id>/<uuid>.<ext>`) are still served (`LEGACY_RE`); see `migrations/`.
+- Keys written before the layout split (`<group-id>/<uuid>.<ext>`) are still served (`LEGACY_RE`).
 - Personal QR: `POST /api/me/qr` stores the key in `users.qr` (`qrs/<email>`) and the object in R2; `DELETE` clears
   both. Readable by you and by anyone sharing a group with you (`canSeeQr`), served at `/img/qrs/<email>`. Clicking a
   name in a group's summary opens it; the nav name opens a dialog to edit your display name and replace/remove the QR.
