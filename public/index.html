@@ -255,7 +255,6 @@ async function viewGroups() {
     app.onclick = async (e) => {
       const t = e.target;
       if (t.dataset.newGroup) { $("#new-group").reset(); $("#group-dialog").showModal(); }
-      else if (t.dataset.close) $("#" + t.dataset.close).close();
       else if (t.dataset.page) {
         offset = Math.max(0, t.dataset.page === "next" ? offset + limit : offset - limit);
         await load();
@@ -528,7 +527,6 @@ async function viewGroup(id) {
       else if (t.dataset.members) $("#members-dialog").showModal();
       else if (t.dataset.newBill) { t.closest("details").open = true; resetBill(); }
       else if (t.dataset.newPay) { t.closest("details").open = true; resetPay(); }
-      else if (t.dataset.close) $("#" + t.dataset.close).close();
       else if (t.dataset.remove) {
         if (state.billImage === t.dataset.remove) { state.billImage = null; drawThumbs("bill"); }
         else { state.payImage = null; drawThumbs("pay"); }
@@ -667,6 +665,9 @@ document.addEventListener("pointerdown", (e) => {
   pressedBackdrop = e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom ? d : null;
 });
 document.addEventListener("click", (e) => {
+  // Dialogs live both inside #app and in static markup, so close here, not per view.
+  const closer = e.target.closest?.("[data-close]");
+  if (closer) $("#" + closer.dataset.close).close();
   if (pressedBackdrop && e.target === pressedBackdrop) pressedBackdrop.close();
   pressedBackdrop = null;
 });
