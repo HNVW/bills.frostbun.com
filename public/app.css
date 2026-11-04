@@ -212,12 +212,15 @@ a.ledger-row:hover { background: var(--surface); }
 .balance-row { display: grid; grid-template-columns: 1fr auto; gap: var(--sp-3); align-items: baseline; padding: var(--sp-2) 0; border-bottom: 1px solid var(--rule); }
 .balance-row:last-child { border-bottom: 0; }
 .settlements { display: grid; gap: var(--sp-2); }
-/* Two names plus an arrow is too much for a phone in one line beside the amount and a button, so
-   the names get their own full-width row and amount + action share the row below. */
-.settlement { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--sp-2) var(--sp-3); align-items: center; }
-.settlement > span:first-child { grid-column: 1 / -1; overflow-wrap: anywhere; }
+/* One line when it fits: names on the left, amount and action on the right. Only a narrow screen
+   stacks them, and there the names take their own row. */
+.settlement { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: var(--sp-3); align-items: center; }
+.settlement-names { overflow-wrap: anywhere; }
+.settlement-amount { justify-self: end; white-space: nowrap; }
 @media (max-width: 480px) {
-  .settlement > span:first-child { overflow-wrap: break-word; }
+  .settlement { grid-template-columns: minmax(0, 1fr) auto; gap: var(--sp-2) var(--sp-3); }
+  .settlement-names { grid-column: 1 / -1; }
+  .settlement-amount { justify-self: start; }
 }
 
 .money { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }

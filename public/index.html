@@ -396,12 +396,11 @@ async function viewGroup(id) {
       ${summary.settlements.length
         ? `<div class="settlements"><h3>${esc(t("group.settleUp"))}</h3>${summary.settlements.map((s) => `
           <div class="settlement">
-            <span>${esc(s.fromName)} → ${esc(s.toName)}</span>
-            <span class="row" style="justify-content:flex-end"><span class="money">${vnd(s.amount)}</span>${
-              `<button type="button" class="btn" data-quickpay="${esc(s.from)}" data-payee="${esc(s.to)}" data-amount="${s.amount}">${
-                esc(t(s.from === me ? "quickpay.pay" : "quickpay.receive"))
-              }</button>`
-            }</span>
+            <span class="settlement-names">${esc(s.fromName)} → ${esc(s.toName)}</span>
+            <span class="money settlement-amount">${vnd(s.amount)}</span>
+            <button type="button" class="btn" data-quickpay="${esc(s.from)}" data-payee="${esc(s.to)}" data-amount="${s.amount}">${
+              esc(t(s.from === me ? "quickpay.pay" : "quickpay.receive"))
+            }</button>
           </div>`).join("")}</div>`
         : `<p class="muted">${esc(t("group.allSettled"))}</p>`}
     </section>
