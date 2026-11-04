@@ -289,17 +289,21 @@ dialog {
   box-shadow: var(--shadow-modal);
 }
 dialog .dialog-head {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3);
   position: sticky; top: calc(var(--sp-5) * -1); z-index: 1;
   margin: calc(var(--sp-5) * -1) calc(var(--sp-5) * -1) var(--sp-4);
   padding: var(--sp-4) var(--sp-5);
   background: var(--paper); border-bottom: 1px solid var(--rule);
 }
 dialog .dialog-body { display: grid; gap: var(--sp-3); }
-/* actions that must never be scrolled past sit under the head, outside the scrolling body */
-dialog .dialog-actions {
-  display: flex; justify-content: flex-end; gap: var(--sp-2);
-  padding: 0 0 var(--sp-4);
+/* The sticky head can carry the dialog's actions, so they cannot be scrolled past or pushed out by
+   content. The title truncates rather than wrapping the buttons off the row. */
+dialog .dialog-head--actions { justify-content: space-between; gap: var(--sp-3); flex-wrap: nowrap; }
+dialog .dialog-head--actions h2 {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1 1 auto;
 }
+/* the two actions keep their intrinsic width and never wrap onto separate lines */
+dialog .dialog-head--actions .row { flex: 0 0 auto; flex-wrap: nowrap; }
 /* a payment QR is whatever screenshot the user uploaded: bound it by height so it cannot push the
    dialog past the fold, and let the body scroll if it still overflows */
 .qr-img {

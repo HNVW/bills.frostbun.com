@@ -470,11 +470,12 @@ async function viewGroup(id) {
     </dialog>
 
     <dialog id="quickpay-dialog" aria-labelledby="quickpay-title">
-      <div class="dialog-head"><h2 id="quickpay-title"></h2>
-        <button type="button" class="btn btn-quiet" data-close="quickpay-dialog">${esc(t("common.close"))}</button></div>
-      <div class="dialog-actions">
-        <button type="button" class="btn" data-close="quickpay-dialog">${esc(t("common.cancel"))}</button>
-        <button type="button" class="btn btn-primary" id="quickpay-done">${esc(t("quickpay.done"))}</button>
+      <div class="dialog-head dialog-head--actions">
+        <h2 id="quickpay-title"></h2>
+        <span class="row">
+          <button type="button" class="btn" data-close="quickpay-dialog">${esc(t("common.cancel"))}</button>
+          <button type="button" class="btn btn-primary" id="quickpay-done">${esc(t("quickpay.done"))}</button>
+        </span>
       </div>
       <div class="dialog-body">
         <div class="summary-total">
