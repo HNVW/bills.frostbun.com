@@ -376,9 +376,9 @@ async function viewGroup(id) {
           <div class="settlement">
             <span>${esc(s.fromName)} → ${esc(s.toName)}</span>
             <span class="row" style="justify-content:flex-end"><span class="money">${vnd(s.amount)}</span>${
-              s.from === me
-                ? `<button type="button" class="btn" data-quickpay="${esc(s.to)}" data-amount="${s.amount}">${esc(t("quickpay.pay"))}</button>`
-                : `<button type="button" class="btn icon-btn" data-qr="${esc(s.to)}" title="${esc(t("group.showQr", { name: s.toName }))}">${esc(t("common.qr"))}</button>`
+              `<button type="button" class="btn" data-quickpay="${esc(s.from)}" data-payee="${esc(s.to)}" data-amount="${s.amount}">${
+                esc(t(s.from === me ? "quickpay.pay" : "quickpay.receive"))
+              }</button>`
             }</span>
           </div>`).join("")}</div>`
         : `<p class="muted">${esc(t("group.allSettled"))}</p>`}
@@ -483,7 +483,7 @@ async function viewGroup(id) {
           <span class="amount num" id="quickpay-amount"></span>
         </div>
         <div id="quickpay-qr"></div>
-        <p class="muted">${esc(t("quickpay.hint"))}</p>
+        <p class="muted" id="quickpay-hint"></p>
       </div>
     </dialog>
 
@@ -718,14 +718,19 @@ async function viewGroup(id) {
 
   // Quick pay: show the payee's QR, then record the transfer the transfer list already named.
   // Cancel closes without a request; Done writes one payment and repaints from the server.
-  function openQuickPay(email, amount) {
-    const m = members.find((x) => x.email === email);
-    if (!m) return;
-    $("#quickpay-title").textContent = t("quickpay.title", { name: m.name });
+  function openQuickPay(from, to, amount) {
+    const payer = members.find((x) => x.email === from);
+    const payee = members.find((x) => x.email === to);
+    if (!payer || !payee) return;
+    const iAmPayer = from === me;
+    $("#quickpay-title").textContent = iAmPayer
+      ? t("quickpay.title", { name: payee.name })
+      : t("quickpay.receiveTitle", { name: payer.name });
     $("#quickpay-amount").textContent = vnd(amount);
-    $("#quickpay-qr").innerHTML = m.qr
-      ? `<img class="qr-img" src="${esc(m.qr)}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('p'),{className:'muted',textContent:'${esc(t("common.noQr"))}'}))">`
-      : `<p class="muted">${esc(t("common.noQr"))}</p>`;
+    $("#quickpay-qr").innerHTML = payee.qr
+      ? `<img class="qr-img" src="${esc(payee.qr)}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('p'),{className:'muted',textContent:'${esc(t("common.noQr"))}'}))">`
+      : `<p class="muted">${esc(iAmPayer ? t("common.noQr") : t("quickpay.noQrSelf"))}</p>`;
+    $("#quickpay-hint").textContent = t(iAmPayer ? "quickpay.hint" : "quickpay.receiveHint");
     const done = $("#quickpay-done");
     done.disabled = false;
     done.textContent = t("quickpay.done");
@@ -735,7 +740,7 @@ async function viewGroup(id) {
       try {
         await api(`/api/groups/${id}/payments`, {
           method: "POST",
-          body: JSON.stringify({ id: newId(), from: me, to: email, amount }),
+          body: JSON.stringify({ id: newId(), from, to, amount }),
         });
         $("#quickpay-dialog").close();
         await render();
@@ -755,7 +760,7 @@ async function viewGroup(id) {
     if (!el) return;
     const d = el.dataset;
     // a card opened from the keyboard is a button-like target: Enter on the pencil already handles it
-    if (d.quickpay) { openQuickPay(d.quickpay, Number(d.amount)); return; }
+    if (d.quickpay) { openQuickPay(d.quickpay, d.payee, Number(d.amount)); return; }
     if (d.members) return $("#members-dialog").showModal();
     if (d.newBill) return resetBill();
     if (d.newPay) return resetPay();
