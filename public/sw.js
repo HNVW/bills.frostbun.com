@@ -1,7 +1,7 @@
 // Minimal offline shell: navigations fall back to the cached page, API calls are never cached.
 // Bump CACHE when the shell changes. It is also the safety valve for a botched deploy: a new value makes
 // the browser drop every old entry on activate, so HTML and its stylesheet can never pair across versions.
-const CACHE = "bills-v5";
+const CACHE = "bills-v6";
 const SHELL = ["/", "/app.css", "/i18n.js", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png",
   "/fonts/publicsans-latin.woff2", "/fonts/publicsans-vi.woff2"];
 

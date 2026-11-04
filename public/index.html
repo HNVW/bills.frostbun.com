@@ -41,14 +41,7 @@
   <div class="dialog-head"><h2 id="settings-title"></h2>
     <button type="button" class="btn btn-quiet" data-close="settings-dialog"></button></div>
   <div class="stack">
-    <span class="muted" id="settings-scheme-label"></span>
-    <div class="scheme-grid" id="scheme-grid" role="group" aria-labelledby="settings-scheme-label"></div>
-    <span class="muted" id="settings-lang-label"></span>
-    <div class="stack" id="lang-list" role="group" aria-labelledby="settings-lang-label"></div>
-    <span class="muted" id="shortcuts-title"></span>
-    <div class="stack" id="shortcuts-hint"></div>
-
-    <div class="settings-section">
+    <div class="settings-section settings-section--first">
       <span class="muted" id="settings-notify-label"></span>
       <button type="button" class="btn lang-opt" id="notify" aria-pressed="false">
         <span id="notify-state"></span><span class="muted" id="notify-action"></span>
@@ -57,11 +50,18 @@
     </div>
 
     <div class="settings-section">
-      <span class="muted" id="settings-account-label"></span>
-      <button type="button" class="btn lang-opt" id="logout">
-        <span id="logout-label"></span>
-        <span class="muted" id="who"></span>
-      </button>
+      <span class="muted" id="settings-lang-label"></span>
+      <div class="stack" id="lang-list" role="group" aria-labelledby="settings-lang-label"></div>
+    </div>
+
+    <div class="settings-section">
+      <span class="muted" id="settings-scheme-label"></span>
+      <div class="scheme-grid" id="scheme-grid" role="group" aria-labelledby="settings-scheme-label"></div>
+    </div>
+
+    <div class="settings-section">
+      <span class="muted" id="shortcuts-title"></span>
+      <div class="stack" id="shortcuts-hint"></div>
     </div>
   </div>
 </dialog>
@@ -83,7 +83,13 @@
     </div>
     <label><span id="profile-replace-label"></span><input name="qr" type="file" accept="image/*"></label>
     <p class="muted" id="profile-hint"></p>
-    <div class="dialog-foot"><button class="btn btn-primary" id="profile-save"></button></div>
+    <div class="dialog-foot">
+      <button type="button" class="btn btn-danger" id="logout">
+        <span id="logout-label"></span>
+        <span class="muted" id="who"></span>
+      </button>
+      <button class="btn btn-primary" id="profile-save"></button>
+    </div>
   </form>
 </dialog>
 
@@ -949,7 +955,6 @@ function paintChrome() {
   $("#qr-dialog .dialog-head h2").textContent = t("common.qr");
   for (const [sel, text] of [
     ["#settings-notify-label", "settings.notifications"],
-    ["#settings-account-label", "settings.account"],
     ["#logout-label", "nav.logout"],
     ["#profile-dialog .dialog-head h2", "profile.title"],
     ["#profile-name-label", "profile.name"],

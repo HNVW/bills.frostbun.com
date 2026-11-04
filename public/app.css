@@ -283,16 +283,23 @@ a.ledger-row:hover { background: var(--surface); }
    wrapper. The head and foot stick inside that scroll box, so a tall form or a 900px QR never pushes
    Done out of reach. */
 dialog {
-  width: min(94vw, 560px); max-height: 88vh; overflow-y: auto;
-  padding: var(--sp-5); border: 1px solid var(--rule-strong); border-radius: var(--r-md);
+  width: min(94vw, 560px); max-height: 88vh; overflow-y: auto; overflow-x: hidden;
+  padding: var(--sp-5) 0; border: 1px solid var(--rule-strong); border-radius: var(--r-md);
   background: var(--paper); color: var(--ink);
   box-shadow: var(--shadow-modal);
 }
+/* Horizontal padding lives on the children, so a full-bleed sticky bar cannot outgrow the dialog. */
+dialog > * { padding-inline: var(--sp-5); }
+dialog > form { padding-inline: 0; }
+dialog > form > * { padding-inline: var(--sp-5); }
+/* An implicit `auto` grid column grows to its widest child, so one long footer button stretched
+   every row past the dialog. Pin the column to the container and let the button shrink. */
+dialog > form { grid-template-columns: minmax(0, 1fr); }
 dialog .dialog-head {
   display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3);
   position: sticky; top: calc(var(--sp-5) * -1); z-index: 1;
-  margin: calc(var(--sp-5) * -1) calc(var(--sp-5) * -1) var(--sp-4);
-  padding: var(--sp-4) var(--sp-5);
+  margin: calc(var(--sp-5) * -1) 0 var(--sp-4);
+  padding-block: var(--sp-4);
   background: var(--paper); border-bottom: 1px solid var(--rule);
 }
 dialog .dialog-body { display: grid; gap: var(--sp-3); }
@@ -315,8 +322,8 @@ dialog .dialog-head--actions .row { flex: 0 0 auto; flex-wrap: nowrap; }
 
 dialog .dialog-foot {
   position: sticky; bottom: calc(var(--sp-5) * -1);
-  margin: var(--sp-4) calc(var(--sp-5) * -1) calc(var(--sp-5) * -1);
-  padding: var(--sp-3) var(--sp-5) var(--sp-4);
+  margin: var(--sp-4) 0 calc(var(--sp-5) * -1);
+  padding-block: var(--sp-3) var(--sp-4);
   background: var(--paper); border-top: 1px solid var(--rule);
 }
 dialog::backdrop { background: var(--scrim); }
@@ -324,7 +331,13 @@ dialog::backdrop { background: var(--scrim); }
 /* Primary action sits bottom-right; a destructive one takes the left, so Delete and Save never swap
    corners between dialogs. `margin-right: auto` on the destructive button does the split without a
    second rule. */
-.dialog-foot { display: flex; align-items: center; justify-content: flex-end; gap: var(--sp-2); }
+/* The footer must fit: a wide destructive control shrinks and truncates rather than pushing the
+   primary action out of the dialog. */
+.dialog-foot { display: flex; align-items: center; justify-content: flex-end; gap: var(--sp-2); min-width: 0; }
+.dialog-foot > .btn { min-width: 0; }
+.dialog-foot > .btn-danger { overflow: hidden; text-overflow: ellipsis; display: inline-flex; }
+.dialog-foot > .btn-danger #who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dialog-foot > .btn-primary { flex-shrink: 0; }
 .dialog-foot > .btn-danger { margin-right: auto; }
 .title-row { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
 .title-row h1 { overflow: hidden; text-overflow: ellipsis; }
@@ -332,6 +345,8 @@ dialog::backdrop { background: var(--scrim); }
   display: grid; gap: var(--sp-2);
   margin-top: var(--sp-5); padding-top: var(--sp-4); border-top: 1px solid var(--rule);
 }
+/* the first section sits right under the sticky head, so it needs no rule above it */
+.settings-section--first { margin-top: 0; padding-top: 0; border-top: 0; }
 
 .member-list { list-style: none; padding: 0; margin: 0 0 var(--sp-4); }
 .member-list li {
