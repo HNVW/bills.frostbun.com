@@ -3,6 +3,13 @@
 Split bills and settle up with friends. One Cloudflare Worker (D1 + R2) serving a static SPA from `public/`.
 Installable as a PWA; bills involving you arrive as Web Push notifications.
 
+The UI is Vietnamese by default with an English switch, and ships eight colour schemes — four light (paper, newsprint,
+moss, porcelain) and four dark (midnight, ink, plum, forest) — chosen in the settings dialog (gear in the nav, or `?`).
+Both live in `localStorage` and are applied by a four-line inline script before first paint, so neither flashes.
+Copy lives in `public/i18n.js` (flat dotted keys, `{param}` interpolation); a missing Vietnamese key falls back to
+English rather than showing a raw key. Fonts are self-hosted (`public/fonts/`, Public Sans variable, latin + vietnamese
+subsets) because the PWA must render identically offline.
+
 ## Setup
 
 `wrangler.jsonc` holds the only account-specific values: the D1 `database_id` and the `routes` pattern. Nothing else
@@ -56,7 +63,7 @@ bun run dev
 ```
 
 `DEV_EMAIL` is the dev-only identity; remove the var to test the real Access headers. `bun run check` typechecks;
-`bun run test` exists but the repo has no test files — verification is manual against `wrangler dev`.
+`bun run test` covers the money split (`src/split.test.ts`); everything else is verified by hand against `wrangler dev`.
 Add the VAPID variables to `.dev.vars` to exercise push locally.
 
 ## Deploy
@@ -107,14 +114,16 @@ needs no prior membership — it is how you join.
 | `POST /api/join/:token` | join a group |
 
 Limits: group and display names 1–80 and 1–60 chars, bill title 200 chars (truncated), at least one involved member,
-one image per entry, 8 MB per image, `limit` capped at 50. Amounts are positive integers in đồng; the form groups digits with Vietnamese dots (`100.000`) and sends the bare number. Errors are `{error}` with `400` (invalid input),
+one image per entry, 8 MB per image, `limit` capped at 50. Amounts are positive integers in đồng; the form groups
+digits per locale (`100.000` in vi, `100,000` in en) and sends the bare number. A bill may carry `weights`, an object
+of participant email to weight (above 0, at most 100, default 1): a person of weight 2 pays twice the share of weight 1. Errors are `{error}` with `400` (invalid input),
 `401` (no Access identity), `403` (not a member / not the creator), `404`, or `409` (entry id already used, referenced
 image vanished).
 
 ## Data
 
 - `groups(id, name, created_by, invite_token, created_at)`, `members(group_id, email, created_at)`,
-  `bills(amount VND integer, paid_by, participants JSON, image)`, `payments(from, to, amount, image)`,
+  `bills(amount VND integer, paid_by, participants JSON, weights JSON, image)`, `payments(from, to, amount, image)`,
   `users(email, name, qr)`, `push_subscriptions(endpoint, email, p256dh, auth)`.
 - `users(email, name)` is the display name, `users.qr` the optional payment-QR key. Default is the Access identity name, fetched once from
   `/cdn-cgi/access/get-identity` (the app JWT has no name claim) and stored; an email-valued row is re-defaulted on the
@@ -146,12 +155,15 @@ image vanished).
   second browser adds a second row instead of replacing the first. Re-enabling in the same browser reuses its row
   (browsers rotate the endpoint on resubscribe, which lands as a new row — the stale one is deleted on the next
   send that answers `404`/`410`).
-- Balance display is from the viewer's side: `22.500 ₫` in red (`--attention`) means you must pay that much, `−30.000 ₫`
-  in green (`--success`) means you receive it, and |balance| < 1000 ₫ shows `settled`. Only a minus is ever printed —
-  positive amounts carry no `+`. The API's `myBalance` keeps the raw payer-credit sign (positive = others owe you), so
-  the sign you see is the inverse of the number in JSON.
-- Bill cards: green border (`--success`) when you paid, red border (`--attention`) when you are involved but did not
-  pay, plain otherwise. Details (names, images, payer) live in the card's Details dialog, and the card shows the
-  participant count.
-- Summary: each bill adds `amount` to the payer and subtracts the even split (leftover đồng to the first participants)
-  from each participant; payments shift balances; greedy min-cash-flow produces the transfer list.
+- Balance display is from the viewer's side and never uses a sign: the words "you pay" / "you get back" (vi: "bạn trả" /
+  "bạn nhận lại") sit beside an unsigned amount, coloured `--owe` / `--owed`, and |balance| < 1000 ₫ shows `settled`. The
+  API's `myBalance` keeps the raw payer-credit sign (positive = others owe you), so the direction you see is the inverse
+  of the JSON number.
+- Bill cards: a 2px left edge in `--owed` when you paid, `--owe` when you are involved but did not pay, plain otherwise.
+  Details (names, images, payer, per-person weights) live in the card's Details dialog; the card shows the participant
+  count.
+- Summary: each bill adds `amount` to the payer and subtracts that person's weighted share (leftover đồng go one each to
+  the heaviest weights, then declaration order, so the shares sum to the amount) from each participant; payments shift
+  balances; greedy min-cash-flow produces the transfer list.
+- Weights: the bill form shows a number field per member beside its checkbox, disabled when the member is unchecked.
+  Stored as a JSON object in `bills.weights`; an absent or missing key means 1, so an existing row needs no backfill.

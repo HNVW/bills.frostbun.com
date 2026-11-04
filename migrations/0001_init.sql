@@ -25,7 +25,8 @@ CREATE TABLE IF NOT EXISTS members (
 
 CREATE INDEX IF NOT EXISTS members_email ON members (email);
 
--- Money entries. `participants` is a JSON array; `image` is the entry's R2 key (`<kind>/<group-id>/<id>`).
+-- Money entries. `participants` is a JSON array; `weights` is a JSON object of email → weight (absent = all 1);
+-- `image` is the entry's R2 key (`<kind>/<group-id>/<id>`).
 CREATE TABLE IF NOT EXISTS bills (
   id TEXT PRIMARY KEY,
   group_id TEXT NOT NULL,
@@ -33,6 +34,7 @@ CREATE TABLE IF NOT EXISTS bills (
   amount INTEGER NOT NULL CHECK (amount > 0),
   paid_by TEXT NOT NULL,
   participants TEXT NOT NULL,
+  weights TEXT,
   image TEXT,
   created_by TEXT NOT NULL,
   created_at TEXT NOT NULL

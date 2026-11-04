@@ -1,97 +1,139 @@
 <!doctype html>
-<html lang="en">
+<html lang="vi-vn" data-scheme="paper">
+<head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#18181b">
+<meta name="description" content="Chia hoá đơn và thanh toán với bạn bè — split bills and settle up with friends.">
+<meta name="theme-color" content="#f9f6f2">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/icon-192.png" sizes="192x192">
 <link rel="apple-touch-icon" href="/icon-192.png">
-<title>Shared Bills</title>
-<style>
-  :root { color-scheme: light dark; --muted: #888; --line: #8884; --success: #2e9e5b; --attention: #d9534f; }
-  * { box-sizing: border-box; }
-  body { margin: 0 auto; max-width: 760px; padding: 16px; font: 15px/1.5 system-ui, sans-serif; }
-  h1, h2, h3 { margin: 0 0 8px; font-size: 1.15rem; }
-  h2 { font-size: 1rem; }
-  button { font: inherit; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--line); background: transparent; }
-  input, select, textarea { font: inherit; padding: 6px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit; width: 100%; }
-  form { display: grid; gap: 8px; margin: 8px 0; }
-  label { display: grid; gap: 4px; font-size: .85rem; color: var(--muted); }
-  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-  .card { border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin: 8px 0; }
-  a.group { display: block; color: inherit; text-decoration: none; padding: 16px; font-size: 1.15rem; }
-  a.group strong { display: block; margin-bottom: 2px; }
-  a.group:hover { border-color: var(--muted); }
-  a.group .muted { font-size: .85rem; }
-  .card.mine { border: 2px solid var(--attention); }
-  .card.paid { border: 2px solid var(--success); }
-  .badge { font-size: .75rem; padding: 2px 8px; border-radius: 99px; border: 1px solid currentColor; white-space: nowrap; }
-  .badge.settled { color: var(--muted); }
-  .badge.owe, .money.owe { color: var(--attention); }
-  .badge.owed, .money.owed { color: var(--success); }
-  fieldset.checks { border: 1px solid var(--muted); border-radius: 6px; padding: 10px 12px; margin: 0; display: grid; gap: 2px; }
-  fieldset.checks legend { font-size: .85rem; color: var(--muted); padding: 0 6px; }
-  label.check { display: flex; gap: 8px; align-items: center; color: inherit; font-size: .95rem; padding: 3px 0; cursor: pointer; }
-  label.check input { width: auto; accent-color: var(--success); margin: 0; }
-  .muted { color: var(--muted); font-size: .85rem; }
-  .money { font-variant-numeric: tabular-nums; font-weight: 600; }
-  nav { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 12px; }
-  nav a { color: inherit; text-decoration: none; font-weight: 700; font-size: .95rem; }
-  ul { padding-left: 18px; margin: 4px 0; }
-  .thumbs { display: flex; gap: 6px; flex-wrap: wrap; }
-  .thumbs img { width: 64px; height: 64px; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); }
-  .thumbs figure { margin: 0; position: relative; }
-  .thumbs button { position: absolute; top: -6px; right: -6px; padding: 0 5px; border-radius: 50%; background: Canvas; }
-  .danger { color: #d33; }
-  button.link { background: none; border: 0; padding: 0; font: inherit; color: inherit; text-decoration: underline dotted var(--muted); cursor: pointer; }
-  .hidden { display: none !important; }
-  details { border: 1px solid var(--line); border-radius: 6px; padding: 8px; }
-  summary { cursor: pointer; }
-  dialog { border: 1px solid var(--line); border-radius: 8px; padding: 14px; width: min(92vw, 520px); background: Canvas; color: inherit; }
-  dialog::backdrop { background: #0006; }
-  dialog form { margin: 0; }
-  dialog img { max-width: 100%; border-radius: 6px; border: 1px solid var(--line); }
-</style>
-<nav><a href="/" id="home" title="All groups">Shared Bills</a><span class="row">
-  <button id="me" class="muted" title="Your profile — name and payment QR"></button>
-  <button id="notify" class="muted" title="Notifications"></button>
-  <button id="logout" class="muted" title="Sign out of Cloudflare Access">Log out</button>
-</span></nav>
-<main id="app"></main>
-<dialog id="qr-dialog">
-  <div class="row" style="justify-content:space-between"><strong></strong>
-    <button type="button" class="muted" data-close="qr-dialog">Close</button></div>
+<link rel="preload" href="/fonts/publicsans-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/publicsans-vi.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/app.css">
+<title>Hoá đơn chung</title>
+<script>
+  // Runs before first paint: scheme and language from the last visit, so neither flashes wrong.
+  (function () {
+    var scheme = localStorage.getItem("scheme") || "paper";
+    document.documentElement.dataset.scheme = scheme;
+    document.documentElement.lang = localStorage.getItem("lang") || "vi-vn";
+    var meta = document.querySelector('meta[name="theme-color"]');
+    var paper = { paper: "#f9f6f2", newsprint: "#f1f4f6", moss: "#f2f6ee", porcelain: "#f7f6fa", midnight: "#101419", ink: "#120f0c", plum: "#150f15", forest: "#0e130f" };
+    if (meta && paper[scheme]) meta.content = paper[scheme];
+  })();
+</script>
+</head>
+<body>
+<nav>
+  <a class="brand" href="/" id="home"></a>
+  <div class="nav-actions">
+    <button type="button" class="icon-btn" id="me"></button>
+    <button type="button" class="icon-btn" id="notify" aria-pressed="false"></button>
+    <button type="button" class="icon-btn" id="settings" aria-haspopup="dialog">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+    </button>
+    <button type="button" class="icon-btn" id="logout"></button>
+  </div>
+</nav>
+<main id="app" class="wrap"></main>
+
+<dialog id="settings-dialog" aria-labelledby="settings-title">
+  <div class="dialog-head"><h2 id="settings-title"></h2>
+    <button type="button" class="btn btn-quiet" data-close="settings-dialog"></button></div>
+  <div class="stack">
+    <span class="muted" id="settings-scheme-label"></span>
+    <div class="scheme-grid" id="scheme-grid" role="group" aria-labelledby="settings-scheme-label"></div>
+    <span class="muted" id="settings-lang-label"></span>
+    <div class="stack" id="lang-list" role="group" aria-labelledby="settings-lang-label"></div>
+    <span class="muted" id="shortcuts-title"></span>
+    <div class="stack" id="shortcuts-hint"></div>
+  </div>
+</dialog>
+
+<dialog id="qr-dialog" aria-labelledby="qr-title">
+  <div class="dialog-head"><h2 id="qr-title"></h2>
+    <button type="button" class="btn btn-quiet" data-close="qr-dialog"></button></div>
   <div id="qr-view"></div>
 </dialog>
-<dialog id="profile-dialog">
+
+<dialog id="profile-dialog" aria-labelledby="profile-title">
   <form id="profile-form">
-    <div class="row" style="justify-content:space-between"><strong>Your profile</strong>
-      <button type="button" class="muted" data-close="profile-dialog">Close</button></div>
-    <label>Display name<input name="name" maxlength="60" autofocus required></label>
-    <span class="muted">Payment QR</span>
-    <div class="thumbs" id="qr-preview"></div>
-    <label>Replace QR<input name="qr" type="file" accept="image/*"></label>
-    <p class="muted">Shown to people who share a group with you, so they can scan it when they pay you.</p>
-    <div class="row"><button>Save</button></div>
+    <div class="dialog-head"><h2 id="profile-title"></h2>
+      <button type="button" class="btn btn-quiet" data-close="profile-dialog"></button></div>
+    <label><span id="profile-name-label"></span><input name="name" maxlength="60" autofocus required></label>
+    <div class="stack">
+      <span class="muted" id="profile-qr-label"></span>
+      <div class="thumbs" id="qr-preview"></div>
+    </div>
+    <label><span id="profile-replace-label"></span><input name="qr" type="file" accept="image/*"></label>
+    <p class="muted" id="profile-hint"></p>
+    <div class="dialog-foot"><button class="btn btn-primary" id="profile-save"></button></div>
   </form>
 </dialog>
-<script>
+
+<script type="module">
+import { DICTS, ERROR_KEYS, LANGUAGES, SCHEMES } from "/i18n.js";
+
 const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
-const vnd = (n) => Number(n).toLocaleString("vi-VN") + " ₫";
-// Vietnamese grouping uses dots; strip everything else so "100.000" -> 100000.
-const amountValue = (input) => Number(input.value.replace(/\D/g, ""));
-const formatAmount = (input) => {
-  const digits = input.value.replace(/\D/g, "").replace(/^0+(?=\d)/, "");
-  input.value = digits ? Number(digits).toLocaleString("vi-VN") : "";
-};
+
+/* ---------- i18n ---------- */
+
+const DEFAULT_LANG = "vi-vn";
+let lang = localStorage.getItem("lang") || DEFAULT_LANG;
+if (!DICTS[lang]) lang = DEFAULT_LANG;
+
+function t(key, params) {
+  const s = DICTS[lang][key] ?? DICTS["en-us"][key] ?? key;
+  return params ? s.replace(/\{(\w+)\}/g, (m, k) => (k in params ? String(params[k]) : m)) : s;
+}
+
+// Unknown API strings still surface: show the server text rather than a bare "error".
+function errorText(message) {
+  if (ERROR_KEYS[message]) return t(ERROR_KEYS[message]);
+  const prefixed = Object.keys(ERROR_KEYS).find((k) => message.startsWith(k));
+  if (prefixed) return t(ERROR_KEYS[prefixed]);
+  return t("error.generic", { error: message });
+}
+
+const nf = () => new Intl.NumberFormat(lang === "vi-vn" ? "vi-VN" : "en-US");
+const vnd = (n) => nf().format(Number(n)) + " ₫";
+const date = (iso) => new Date(iso).toLocaleDateString(lang === "vi-vn" ? "vi-VN" : "en-US");
+const dateTime = (iso) => new Date(iso).toLocaleString(lang === "vi-vn" ? "vi-VN" : "en-US");
+
+/* ---------- scheme ---------- */
+
+let scheme = localStorage.getItem("scheme") || "paper";
+if (!SCHEMES.some((s) => s.id === scheme)) scheme = SCHEMES[0].id;
+const PAPER_HEX = { paper: "#f9f6f2", newsprint: "#f1f4f6", moss: "#f2f6ee", porcelain: "#f7f6fa", midnight: "#101419", ink: "#120f0c", plum: "#150f15", forest: "#0e130f" };
+
+function applyScheme(id, persist = true) {
+  scheme = SCHEMES.some((s) => s.id === id) ? id : SCHEMES[0].id;
+  document.documentElement.dataset.scheme = scheme;
+  document.querySelector('meta[name="theme-color"]').content = PAPER_HEX[scheme];
+  if (persist) localStorage.setItem("scheme", scheme);
+}
+
+function applyLang(code, repaint = true) {
+  if (!DICTS[code]) return;
+  lang = code;
+  document.documentElement.lang = code;
+  localStorage.setItem("lang", code);
+  paintChrome();
+  if (repaint) render();
+}
+
+/* ---------- api ---------- */
+
 const app = $("#app");
 
 async function api(path, opts = {}) {
   const res = await fetch(path, { headers: opts.body instanceof FormData ? {} : { "content-type": "application/json" }, ...opts });
   if (res.status === 401) {
-    document.body.innerHTML = "<p style='padding:24px'>Not signed in. Cloudflare Access is required.</p>";
+    app.innerHTML = `<p class="empty">${esc(t("push.notSignedIn"))}</p>`;
     throw new Error("unauthenticated");
   }
   const data = res.status === 204 ? null : await res.json().catch(() => null);
@@ -100,10 +142,9 @@ async function api(path, opts = {}) {
 }
 
 function fail(err) {
-  alert(err.message || err);
+  alert(err.message === "unauthenticated" ? t("push.notSignedIn") : errorText(err.message || String(err)));
 }
 
-// One image per entry, stored at a key the Worker derives from the entry id.
 async function uploadImage(groupId, kind, entryId, file) {
   const fd = new FormData();
   fd.append("file", file);
@@ -111,7 +152,6 @@ async function uploadImage(groupId, kind, entryId, file) {
   return key;
 }
 
-// Ids are minted client-side so the image can be uploaded before the entry is created.
 const newId = () => crypto.randomUUID();
 
 /* ---------- notifications ---------- */
@@ -134,7 +174,7 @@ async function enablePush() {
   const permission = await Notification.requestPermission();
   if (permission !== "granted") return false;
   const { publicKey } = await api("/api/push/key");
-  if (!publicKey) throw new Error("notifications are not configured");
+  if (!publicKey) throw new Error(t("push.unconfigured"));
   const reg = await navigator.serviceWorker.ready;
   const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64uToBytes(publicKey) });
   await api("/api/push/subscribe", { method: "POST", body: JSON.stringify(sub.toJSON()) });
@@ -151,8 +191,8 @@ async function disablePush() {
 
 async function togglePush() {
   const state = await pushState().catch(() => "unsupported");
-  if (state === "unsupported") return alert("This browser cannot receive notifications.");
-  if (state === "blocked") return alert("Notifications are blocked in your browser settings.");
+  if (state === "unsupported") return alert(t("push.unsupported"));
+  if (state === "blocked") return alert(t("push.blocked"));
   try {
     if (state === "on") await disablePush();
     else if (!(await enablePush())) return;
@@ -164,17 +204,19 @@ async function paintNotify() {
   const btn = $("#notify");
   if (!btn) return;
   const state = await pushState().catch(() => "unsupported");
-  btn.textContent = state === "on" ? "🔔" : "🔕";
-  btn.title = state === "on" ? "Notifications on — click to turn off" : "Notifications off — click to turn on";
+  const bell = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M18 8a6 6 0 1 0-12 0c0 6-2 7-2 7h16s-2-1-2-7"/><path d="M10.3 20a2 2 0 0 0 3.4 0"/></svg>';
+  const bellOff = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M18 8a6 6 0 0 0-9.3-5"/><path d="M6.3 6.3A6 6 0 0 0 6 8c0 6-2 7-2 7h13"/><path d="M10.3 20a2 2 0 0 0 3.4 0"/><path d="M2 2l20 20"/></svg>';
+  btn.innerHTML = state === "on" ? bell : bellOff;
+  btn.title = state === "on" ? t("nav.notifyOn") : t("nav.notifyOff");
+  btn.setAttribute("aria-pressed", String(state === "on"));
   btn.disabled = state === "unsupported" || state === "blocked";
   btn.onclick = togglePush;
 }
 
-/* ---------- self ---------- */
+/* ---------- profile ---------- */
 
 let meQr = null;
 
-// Name and payment QR live together: both are "who you are" to the rest of the app.
 async function openProfile() {
   const me = await api("/api/me").catch(() => null);
   meQr = me?.qr ?? null;
@@ -187,23 +229,24 @@ async function openProfile() {
 function drawQr() {
   const box = $("#qr-preview");
   box.innerHTML = meQr
-    ? `<figure><img src="${esc(meQr)}" alt="Your payment QR"><button data-drop-qr="1" title="Remove">×</button></figure>`
-    : '<span class="muted">No QR yet — upload a screenshot of your bank transfer QR.</span>';
+    ? `<figure><img src="${esc(meQr)}" alt=""><button type="button" data-drop-qr="1" title="${esc(t("common.remove"))}">×</button></figure>`
+    : `<span class="muted">${esc(t("profile.noQr"))}</span>`;
 }
 
-/* ---------- groups ---------- */
+/* ---------- money ---------- */
 
-// Balance is payer-credit: positive means others owe you, negative means you owe them.
-// Display flips that to your own action — the number you see is what you pay (+) or receive (−) —
-// but a minus is the only sign ever printed; positive and settled amounts stay bare.
+// The API's balance is payer-credit: positive means others owe you. On screen the direction is always a word
+// ("you pay" / "you get back") beside an unsigned amount, so nobody has to decode a sign.
+const settledThreshold = 1000;
 const shownBalance = (balance) => -balance;
-const money = (value) => (value < 0 ? `−${vnd(-value)}` : vnd(value));
 
-function balanceBadge(balance) {
-  if (Math.abs(balance) < 1000) return '<span class="badge settled">settled</span>';
-  const cls = balance < 0 ? "owe" : "owed";
-  return `<span class="badge ${cls}">${money(shownBalance(balance))}</span>`;
+function balanceChip(balance) {
+  if (Math.abs(balance) < settledThreshold) return `<span class="chip">${esc(t("balance.settled"))}</span>`;
+  const owes = shownBalance(balance) < 0;
+  return `<span class="chip ${owes ? "owe" : "owed"}">${esc(t(owes ? "balance.owe" : "balance.owed"))} ${vnd(Math.abs(balance))}</span>`;
 }
+
+/* ---------- groups list ---------- */
 
 async function viewGroups() {
   const limit = 5;
@@ -218,30 +261,31 @@ async function viewGroups() {
 
   function paint() {
     app.innerHTML = `
-      <div class="row" style="justify-content:space-between">
-        <h1 style="margin:0">Your groups</h1><button type="button" data-new-group="1">New group</button>
+      <div class="page-head">
+        <h1>${esc(t("groups.title"))}</h1>
+        <button type="button" class="btn btn-primary" data-new-group="1">${esc(t("groups.new"))}</button>
       </div>
-      <form id="search"><input name="q" type="search" placeholder="Search groups" value="${esc(q)}"></form>
-      <dialog id="group-dialog">
+      <form id="search" role="search"><input name="q" type="search" placeholder="${esc(t("groups.search"))}" aria-label="${esc(t("groups.search"))}" value="${esc(q)}"></form>
+      <dialog id="group-dialog" aria-labelledby="group-dialog-title">
         <form id="new-group">
-          <div class="row" style="justify-content:space-between"><strong>New group</strong>
-            <button type="button" class="muted" data-close="group-dialog">Close</button></div>
-          <label>Name<input name="name" placeholder="Group name" autofocus required maxlength="80"></label>
-          <div class="row"><button>Create</button></div>
+          <div class="dialog-head"><h2 id="group-dialog-title">${esc(t("groups.newTitle"))}</h2>
+            <button type="button" class="btn btn-quiet" data-close="group-dialog">${esc(t("common.close"))}</button></div>
+          <label><span>${esc(t("groups.name"))}</span><input name="name" placeholder="${esc(t("groups.namePlaceholder"))}" autofocus required maxlength="80"></label>
+          <div class="dialog-foot"><button class="btn btn-primary">${esc(t("groups.create"))}</button></div>
         </form>
       </dialog>
-      ${groups.length ? groups.map((g) => `
-        <a class="card group" href="/${g.id}">
-          <span class="row" style="justify-content:space-between">
-            <strong>${esc(g.name)}</strong>${balanceBadge(g.myBalance)}
-          </span>
-          <div class="muted">${g.memberCount} member${g.memberCount === 1 ? "" : "s"} · ${new Date(g.updatedAt).toLocaleDateString()}</div>
-        </a>`).join("")
-        : `<p class="muted">${q ? "No groups match." : "No groups yet."}</p>`}
-      ${total > limit ? `<div class="row" style="justify-content:space-between">
-        <button type="button" data-page="prev" ${offset === 0 ? "disabled" : ""}>← Newer</button>
-        <span class="muted">${offset + 1}–${Math.min(offset + limit, total)} of ${total}</span>
-        <button type="button" data-page="next" ${offset + limit >= total ? "disabled" : ""}>Older →</button>
+      ${groups.length
+        ? `<div class="ledger" style="margin-top:var(--sp-4)">${groups.map((g) => `
+          <a class="ledger-row" href="/${g.id}">
+            <span class="name">${esc(g.name)}</span>
+            <span>${balanceChip(g.myBalance)}</span>
+            <span class="note">${esc(t(g.memberCount === 1 ? "groups.members" : "groups.members_plural", { count: g.memberCount }))} · ${esc(date(g.updatedAt))}</span>
+          </a>`).join("")}</div>`
+        : `<div class="empty">${esc(q ? t("groups.noMatch", { q }) : t("groups.none"))}${q ? "" : `<br><button type="button" class="btn btn-primary" data-new-group="1">${esc(t("groups.new"))}</button>`}</div>`}
+      ${total > limit ? `<div class="row" style="justify-content:space-between;margin-top:var(--sp-4)">
+        <button type="button" class="btn" data-page="prev" ${offset === 0 ? "disabled" : ""}>${esc(t("groups.newer"))}</button>
+        <span class="muted num">${esc(t("groups.pager", { from: offset + 1, to: Math.min(offset + limit, total), total }))}</span>
+        <button type="button" class="btn" data-page="next" ${offset + limit >= total ? "disabled" : ""}>${esc(t("groups.older"))}</button>
       </div>` : ""}`;
 
     $("#search").onsubmit = (e) => { e.preventDefault(); q = e.target.elements.q.value.trim(); offset = 0; load(); };
@@ -253,10 +297,11 @@ async function viewGroups() {
       catch (err) { fail(err); }
     };
     app.onclick = async (e) => {
-      const t = e.target;
-      if (t.dataset.newGroup) { $("#new-group").reset(); $("#group-dialog").showModal(); }
-      else if (t.dataset.page) {
-        offset = Math.max(0, t.dataset.page === "next" ? offset + limit : offset - limit);
+      const el = e.target.closest("[data-new-group], [data-page]");
+      if (!el) return;
+      if (el.dataset.newGroup) { $("#new-group").reset(); $("#group-dialog").showModal(); }
+      else if (el.dataset.page) {
+        offset = Math.max(0, el.dataset.page === "next" ? offset + limit : offset - limit);
         await load();
       }
     };
@@ -268,6 +313,8 @@ async function viewGroups() {
 /* ---------- group ---------- */
 
 async function viewGroup(id) {
+  app.innerHTML = `<div class="stack" aria-busy="true">
+    <div class="skeleton" style="width:40%"></div><div class="skeleton" style="width:70%"></div><div class="skeleton"></div></div>`;
   const [group, bills, payments, summary] = await Promise.all([
     api(`/api/groups/${id}`),
     api(`/api/groups/${id}/bills`),
@@ -278,113 +325,170 @@ async function viewGroup(id) {
   const me = group.me;
   const nameOf = new Map(members.map((m) => [m.email, m.name]));
   const who = (email) => nameOf.get(email) ?? email;
+
   app.innerHTML = `
-    <div class="row" style="justify-content:space-between">
+    <div class="page-head page-head--group">
       <h1 id="gname">${esc(group.name)}</h1>
-      <div class="row">
-        <button type="button" data-members="1">Members (${members.length})</button>
-        <button id="rename">Rename</button><button class="danger" id="del-group">Delete</button>
+      <div class="row head-actions">
+        <button type="button" class="btn" data-members="1">${esc(t("group.members", { count: members.length }))}</button>
+        <button type="button" class="btn btn-quiet" id="rename">${esc(t("group.rename"))}</button>
+        <button type="button" class="btn btn-quiet btn-danger" id="del-group">${esc(t("group.delete"))}</button>
       </div>
     </div>
 
-    <dialog id="members-dialog">
-      <div class="row" style="justify-content:space-between"><strong>Members</strong>
-        <button type="button" class="muted" data-close="members-dialog">Close</button></div>
-      <ul>${members.map((m) => `<li>${esc(m.name)}${m.name === m.email ? "" : ` <span class="muted">${esc(m.email)}</span>`}</li>`).join("")}</ul>
-      <label>Invite link<input id="invite-link" readonly value="${esc(location.origin + "/join/" + group.inviteToken)}"></label>
-      <div class="row"><button type="button" id="copy-invite">Copy</button><button type="button" id="rotate-invite">Rotate link</button></div>
-      <p class="muted">Anyone signed in who opens this link joins the group. Rotating invalidates the old link.</p>
-      <form id="invite"><div class="row"><input name="email" type="email" placeholder="friend@example.com" autofocus required><button>Invite</button></div></form>
-    </dialog>
+    <section class="summary" aria-labelledby="summary-title">
+      <h2 id="summary-title">${esc(t("group.summary"))}</h2>
+      <div class="summary-total">
+        <span class="muted">${esc(t("group.totalSpent"))}</span>
+        <span class="amount num">${vnd(summary.totalSpent)}</span>
+      </div>
+      <div class="balances">
+        ${summary.balances.map((b) => {
+          const settled = Math.abs(b.balance) < settledThreshold;
+          const owes = shownBalance(b.balance) < 0;
+          return `<div class="balance-row">
+          <button type="button" class="btn btn-quiet" style="justify-self:start;min-height:32px;padding:0" data-qr="${esc(b.email)}">${esc(b.name)}</button>
+          <span class="row" style="justify-content:flex-end;gap:var(--sp-2)">
+            ${settled ? "" : `<span class="muted">${esc(t(owes ? "balance.owe" : "balance.owed"))}</span>`}
+            <span class="money ${settled ? "settled" : owes ? "owe" : "owed"}">${settled ? esc(t("balance.settled")) : vnd(Math.abs(b.balance))}</span>
+          </span>
+        </div>`; }).join("")}
+      </div>
+      ${summary.settlements.length
+        ? `<div class="settlements"><h3>${esc(t("group.settleUp"))}</h3>${summary.settlements.map((s) => `
+          <div class="settlement">
+            <span>${esc(s.fromName)} → ${esc(s.toName)}</span>
+            <span class="row" style="justify-content:flex-end"><span class="money">${vnd(s.amount)}</span>${
+              s.from === me ? `<button type="button" class="btn icon-btn" data-qr="${esc(s.to)}" title="${esc(t("group.showQr", { name: s.toName }))}">${esc(t("common.qr"))}</button>` : ""
+            }</span>
+          </div>`).join("")}</div>`
+        : `<p class="muted">${esc(t("group.allSettled"))}</p>`}
+    </section>
 
-    <h2 style="margin-top:16px">Summary</h2>
-    <div class="card">
-      <div>Total spent: <span class="money">${vnd(summary.totalSpent)}</span></div>
-      <ul>${summary.balances.map((b) => `<li><button type="button" class="link" data-qr="${esc(b.email)}">${esc(b.name)}</button>: <span class="money${Math.abs(b.balance) < 1000 ? "" : b.balance < 0 ? " owe" : " owed"}">${money(Math.abs(b.balance) < 1000 ? 0 : shownBalance(b.balance))}</span></li>`).join("")}</ul>
-      ${summary.settlements.length ? `<strong>Settle up</strong>
-        <ul>${summary.settlements.map((s) => `<li>${esc(s.fromName)} → ${esc(s.toName)}: <span class="money">${vnd(s.amount)}</span>${
-          s.from === me ? ` <button type="button" class="muted" data-qr="${esc(s.to)}" title="Show ${esc(s.toName)}'s QR">QR</button>` : ""
-        }</li>`).join("")}</ul>`
-        : '<p class="muted">All settled.</p>'}
+    <div class="tabs" role="tablist">
+      <button type="button" class="tab" role="tab" id="tab-bills" aria-controls="panel-bills" aria-selected="true">${esc(t("group.bills"))} <span class="num">${bills.length}</span></button>
+      <button type="button" class="tab" role="tab" id="tab-payments" aria-controls="panel-payments" aria-selected="false">${esc(t("group.payments"))} <span class="num">${payments.length}</span></button>
     </div>
 
-    <details open style="margin-top:16px">
-    <summary class="row" style="justify-content:space-between">
-      <h2 style="margin:0">Bills <span class="muted">(${bills.length})</span></h2>
-      <button type="button" data-new-bill="1">Add bill</button>
-    </summary>
-    <dialog id="bill-dialog">
-    <form id="bill-form">
-      <div class="row" style="justify-content:space-between"><strong id="bill-title">Add bill</strong>
-        <button type="button" class="muted" data-close="bill-dialog">Close</button></div>
-      <input type="hidden" name="id">
-      <label>Description<input name="title" placeholder="Dinner" autofocus maxlength="200"></label>
-      <label>Amount (VND)<input name="amount" type="text" inputmode="numeric" autocomplete="off" placeholder="100.000" required>
-      </label>
-      <label>Paid by<select name="paidBy">${members.map((m) => `<option value="${esc(m.email)}">${esc(m.name)}</option>`).join("")}</select></label>
-      <fieldset class="checks"><legend>Involved</legend>
-        ${members.map((m) => `<label class="check"><input type="checkbox" name="participants" value="${esc(m.email)}" checked> ${esc(m.name)}</label>`).join("")}
-      </fieldset>
-      <label>Image<input name="file" type="file" accept="image/*"></label>
-      <div class="thumbs" id="bill-thumbs"></div>
-      <div class="row"><button>Save bill</button></div>
-    </form>
-    </dialog>
-    ${bills.length ? bills.map((b) => billCard(b)).join("") : '<p class="muted">No bills yet.</p>'}
-    </details>
+    <section id="panel-bills" role="tabpanel" aria-labelledby="tab-bills">
+      <div class="row" style="justify-content:flex-end;margin-bottom:var(--sp-3)">
+        <button type="button" class="btn btn-primary" data-new-bill="1">${esc(t("group.addBill"))}</button>
+      </div>
+      ${bills.length ? bills.map((b) => billCard(b)).join("") : `<div class="empty">${esc(t("group.noBills"))}<br><button type="button" class="btn btn-primary" data-new-bill="1">${esc(t("group.addBill"))}</button></div>`}
+    </section>
 
-    <details open style="margin-top:8px">
-    <summary class="row" style="justify-content:space-between">
-      <h2 style="margin:0">Payments <span class="muted">(${payments.length})</span></h2>
-      <button type="button" data-new-pay="1">Add payment</button>
-    </summary>
-    <dialog id="pay-dialog">
-    <form id="pay-form">
-      <div class="row" style="justify-content:space-between"><strong id="pay-title">Add payment</strong>
-        <button type="button" class="muted" data-close="pay-dialog">Close</button></div>
-      <input type="hidden" name="id">
-      <label>From<select name="from">${members.map((m) => `<option value="${esc(m.email)}">${esc(m.name)}</option>`).join("")}</select></label>
-      <label>To<select name="to">${members.map((m) => `<option value="${esc(m.email)}">${esc(m.name)}</option>`).join("")}</select></label>
-      <label>Amount (VND)<input name="amount" type="text" inputmode="numeric" autocomplete="off" placeholder="100.000" autofocus required>
-      </label>
-      <label>Image<input name="file" type="file" accept="image/*"></label>
-      <div class="thumbs" id="pay-thumbs"></div>
-      <div class="row"><button>Save payment</button></div>
-    </form>
-    </dialog>
-    ${payments.length ? payments.map((p) => paymentCard(p)).join("") : '<p class="muted">No payments yet.</p>'}
-    </details>
-    <dialog id="detail-dialog">
-      <div class="row" style="justify-content:space-between"><strong id="detail-title"></strong>
-        <button type="button" class="muted" data-close="detail-dialog">Close</button></div>
-      <div id="detail-body" style="display:grid;gap:8px"></div>
-    </dialog>
-`;
+    <section id="panel-payments" role="tabpanel" aria-labelledby="tab-payments" class="hidden">
+      <div class="row" style="justify-content:flex-end;margin-bottom:var(--sp-3)">
+        <button type="button" class="btn btn-primary" data-new-pay="1">${esc(t("group.addPayment"))}</button>
+      </div>
+      ${payments.length ? payments.map((p) => paymentCard(p)).join("") : `<div class="empty">${esc(t("group.noPayments"))}<br><button type="button" class="btn btn-primary" data-new-pay="1">${esc(t("group.addPayment"))}</button></div>`}
+    </section>
 
-  const thumbHTML = (key) => (key ? `<figure><img src="/img/${key}" alt=""><button data-remove="${esc(key)}" title="Remove">×</button></figure>` : "");
+    <dialog id="members-dialog" aria-labelledby="members-title">
+      <div class="dialog-head"><h2 id="members-title">${esc(t("members.title"))}</h2>
+        <button type="button" class="btn btn-quiet" data-close="members-dialog">${esc(t("common.close"))}</button></div>
+      <ul class="stack" style="list-style:none;padding:0;margin:0 0 var(--sp-4)">${members.map((m) => `<li>${esc(m.name)}${m.name === m.email ? "" : ` <span class="muted">${esc(m.email)}</span>`}</li>`).join("")}</ul>
+      <div class="stack">
+        <label><span>${esc(t("members.inviteLink"))}</span><input id="invite-link" readonly value="${esc(location.origin + "/join/" + group.inviteToken)}"></label>
+        <div class="row"><button type="button" class="btn" id="copy-invite">${esc(t("members.copy"))}</button>
+          <button type="button" class="btn btn-quiet" id="rotate-invite">${esc(t("members.rotate"))}</button></div>
+        <p class="muted">${esc(t("members.rotateHint"))}</p>
+      </div>
+      <form id="invite" style="margin-top:var(--sp-4)"><div class="row">
+        <input name="email" type="email" placeholder="${esc(t("members.emailPlaceholder"))}" aria-label="${esc(t("members.invite"))}" autofocus required style="flex:1;min-width:180px">
+        <button class="btn btn-primary">${esc(t("members.invite"))}</button>
+      </div></form>
+    </dialog>
+
+    <dialog id="bill-dialog" aria-labelledby="bill-title">
+      <form id="bill-form">
+        <div class="dialog-head"><h2 id="bill-title">${esc(t("bill.add"))}</h2>
+          <button type="button" class="btn btn-quiet" data-close="bill-dialog">${esc(t("common.close"))}</button></div>
+        <input type="hidden" name="id">
+        <label><span>${esc(t("bill.description"))}</span><input name="title" placeholder="${esc(t("bill.descriptionPlaceholder"))}" autofocus maxlength="200"></label>
+        <label><span>${esc(t("bill.amount"))}</span><input name="amount" type="text" inputmode="numeric" autocomplete="off" placeholder="${esc(t("bill.amountPlaceholder"))}" required></label>
+        <label><span>${esc(t("bill.paidBy"))}</span><select name="paidBy">${members.map((m) => `<option value="${esc(m.email)}">${esc(m.name)}</option>`).join("")}</select></label>
+        <fieldset class="fieldset">
+          <legend>${esc(t("bill.involved"))}</legend>
+          <p class="muted" style="font-size:var(--text-xs)">${esc(t("bill.weightHint"))}</p>
+          ${members.map((m) => `<div class="weight-row">
+            <label class="check"><input type="checkbox" name="participants" value="${esc(m.email)}" checked> ${esc(m.name)}</label>
+            <input type="number" name="weight" data-for="${esc(m.email)}" min="0.1" max="100" step="0.1" value="1" aria-label="${esc(t("bill.weight"))} — ${esc(m.name)}">
+          </div>`).join("")}
+        </fieldset>
+        <label><span>${esc(t("bill.image"))}</span><input name="file" type="file" accept="image/*"></label>
+        <div class="thumbs" id="bill-thumbs"></div>
+        <div class="dialog-foot"><button class="btn btn-primary">${esc(t("bill.save"))}</button></div>
+      </form>
+    </dialog>
+
+    <dialog id="pay-dialog" aria-labelledby="pay-title">
+      <form id="pay-form">
+        <div class="dialog-head"><h2 id="pay-title">${esc(t("payment.add"))}</h2>
+          <button type="button" class="btn btn-quiet" data-close="pay-dialog">${esc(t("common.close"))}</button></div>
+        <input type="hidden" name="id">
+        <label><span>${esc(t("payment.from"))}</span><select name="from">${members.map((m) => `<option value="${esc(m.email)}">${esc(m.name)}</option>`).join("")}</select></label>
+        <label><span>${esc(t("payment.to"))}</span><select name="to">${members.map((m) => `<option value="${esc(m.email)}">${esc(m.name)}</option>`).join("")}</select></label>
+        <label><span>${esc(t("bill.amount"))}</span><input name="amount" type="text" inputmode="numeric" autocomplete="off" placeholder="${esc(t("bill.amountPlaceholder"))}" required></label>
+        <label><span>${esc(t("payment.image"))}</span><input name="file" type="file" accept="image/*"></label>
+        <div class="thumbs" id="pay-thumbs"></div>
+        <div class="dialog-foot"><button class="btn btn-primary">${esc(t("payment.save"))}</button></div>
+      </form>
+    </dialog>
+
+    <dialog id="detail-dialog" aria-labelledby="detail-title">
+      <div class="dialog-head"><h2 id="detail-title"></h2>
+        <button type="button" class="btn btn-quiet" data-close="detail-dialog">${esc(t("common.close"))}</button></div>
+      <div id="detail-body" class="stack"></div>
+    </dialog>
+  `;
+
+  const thumbHTML = (key) => (key ? `<figure><img src="/img/${key}" alt=""><button type="button" data-remove="${esc(key)}" title="${esc(t("common.remove"))}">×</button></figure>` : "");
   const state = { billImage: null, payImage: null, billId: null, payId: null };
 
   function drawThumbs(which) {
-    $(`#${which === "bill" ? "bill" : "pay"}-thumbs`).innerHTML = thumbHTML(state[which === "bill" ? "billImage" : "payImage"]);
+    $(`#${which}-thumbs`).innerHTML = thumbHTML(which === "bill" ? state.billImage : state.payImage);
   }
 
   const billForm = $("#bill-form"), payForm = $("#pay-form");
 
+  // Amount fields group digits per locale; the input still sends the bare integer.
+  const digits = (value) => value.replace(/\D/g, "").replace(/^0+(?=\d)/, "");
+  const amountValue = (input) => Number(input.value.replace(/\D/g, ""));
+  const formatAmount = (input) => {
+    const d = digits(input.value);
+    input.value = d ? nf().format(Number(d)) : "";
+  };
   for (const input of [billForm.elements.amount, payForm.elements.amount]) {
     input.oninput = () => formatAmount(input);
   }
 
-  const participantBoxes = () => [...billForm.querySelectorAll('input[name="participants"]')];
+  const boxes = () => $$('input[name="participants"]', billForm);
+  const weightOf = (email) => Number($(`input[name="weight"][data-for="${CSS.escape(email)}"]`, billForm).value) || 1;
 
-  function setParticipants(values) {
-    for (const box of participantBoxes()) box.checked = values.includes(box.value);
+  // A weight only means something for a checked person, so an unchecked row disables its field.
+  function syncWeights() {
+    for (const box of boxes()) {
+      const field = $(`input[name="weight"][data-for="${CSS.escape(box.value)}"]`, billForm);
+      field.disabled = !box.checked;
+      field.closest(".weight-row").style.opacity = box.checked ? "1" : "0.55";
+    }
+  }
+  for (const box of boxes()) box.onchange = syncWeights;
+
+  function setParticipants(values, weights) {
+    for (const box of boxes()) {
+      box.checked = values.includes(box.value);
+      $(`input[name="weight"][data-for="${CSS.escape(box.value)}"]`, billForm).value = String(weights?.[box.value] ?? 1);
+    }
+    syncWeights();
   }
 
   function resetBill() {
     billForm.reset();
     billForm.elements.id.value = "";
-    $("#bill-title").textContent = "Add bill";
-    setParticipants(members.map((m) => m.email));
+    $("#bill-title").textContent = t("bill.add");
+    setParticipants(members.map((m) => m.email), null);
     state.billImage = null;
     state.billId = newId();
     drawThumbs("bill");
@@ -394,71 +498,87 @@ async function viewGroup(id) {
   billForm.onsubmit = async (e) => {
     e.preventDefault();
     const f = billForm;
-    const participants = participantBoxes().filter((b) => b.checked).map((b) => b.value);
-    if (!participants.length) return fail(new Error("pick at least one involved person"));
+    const picked = boxes().filter((b) => b.checked).map((b) => b.value);
+    if (!picked.length) return alert(t("common.pickParticipant"));
     try {
       const file = f.elements.file.files[0];
       state.billId ||= newId();
       const image = file ? await uploadImage(id, "bills", state.billId, file) : state.billImage;
       const body = {
         id: state.billId,
-        title: f.elements.title.value, amount: amountValue(f.elements.amount), paidBy: f.elements.paidBy.value,
-        participants, image,
+        title: f.elements.title.value,
+        amount: amountValue(f.elements.amount),
+        paidBy: f.elements.paidBy.value,
+        participants: picked,
+        weights: Object.fromEntries(picked.map((p) => [p, weightOf(p)])),
+        image,
       };
       if (f.elements.id.value) await api(`/api/groups/${id}/bills/${f.elements.id.value}`, { method: "PATCH", body: JSON.stringify(body) });
       else await api(`/api/groups/${id}/bills`, { method: "POST", body: JSON.stringify(body) });
-      render();
+      await render();
     } catch (err) { fail(err); }
   };
 
-  // A missing QR is not an error: the <img> onerror swaps in a note instead.
+  // A missing QR renders as a note, never a broken image.
   function showQr(m) {
     if (!m) return;
     const dlg = $("#qr-dialog");
-    dlg.querySelector("strong").textContent = m.name;
-    dlg.querySelector("#qr-view").innerHTML =
-      `<img src="${esc(m.qr)}" alt="${esc(m.name)}'s QR" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'muted',textContent:'No QR set.'}))">`;
+    $("#qr-title").textContent = m.name;
+    $("#qr-view").innerHTML = m.qr
+      ? `<img src="${esc(m.qr)}" alt="" style="border-radius:var(--r-sm);border:1px solid var(--rule)">`
+      : `<span class="muted">${esc(t("common.noQr"))}</span>`;
     dlg.showModal();
   }
 
   function editBill(b) {
     billForm.elements.id.value = b.id;
     billForm.elements.title.value = b.title;
-    billForm.elements.amount.value = Number(b.amount).toLocaleString("vi-VN");
+    billForm.elements.amount.value = nf().format(Number(b.amount));
     billForm.elements.paidBy.value = b.paidBy;
-    setParticipants(b.participants);
+    setParticipants(b.participants, b.weights);
     state.billId = b.id;
     state.billImage = b.image;
     drawThumbs("bill");
-    $("#bill-title").textContent = "Edit bill";
+    $("#bill-title").textContent = t("bill.edit");
     $("#bill-dialog").showModal();
   }
 
   function billCard(b) {
     const involved = b.participants.includes(me);
-    // red: you are involved; green: you paid it (green wins when both apply)
-    const accent = b.paidBy === me ? " paid" : involved ? " mine" : "";
-    return `<div class="card${accent}">
-      <div class="row" style="justify-content:space-between">
-        <strong>${esc(b.title || "Bill")}</strong>
+    // green edge: you paid it (green wins when both apply); red edge: you are in but did not pay
+    const accent = b.paidBy === me ? " card--paid" : involved ? " card--involved" : "";
+    return `<article class="card${accent}">
+      <div class="card-head">
+        <h3>${esc(b.title || t("detail.title"))}</h3>
         <span class="money">${vnd(b.amount)}</span>
       </div>
-      <div class="muted">${esc(who(b.paidBy))} paid · ${b.participants.length} involved · ${new Date(b.createdAt).toLocaleDateString()}</div>
-      <div class="row"><button data-details-bill="${b.id}">Details</button><button data-edit-bill="${b.id}">Edit</button><button class="danger" data-del-bill="${b.id}">Delete</button></div>
-    </div>`;
+      <div class="card-meta">
+        <span>${esc(b.paidBy === me ? t("group.youPaid") : t("group.paid", { name: who(b.paidBy) }))}</span>
+        <span>${esc(t("group.involved", { count: b.participants.length }))}</span>
+        <span>${esc(date(b.createdAt))}</span>
+      </div>
+      <div class="card-actions">
+        <button type="button" class="btn" data-details-bill="${b.id}">${esc(t("common.details"))}</button>
+        <button type="button" class="btn btn-quiet" data-edit-bill="${b.id}">${esc(t("common.edit"))}</button>
+        <button type="button" class="btn btn-quiet btn-danger" data-del-bill="${b.id}">${esc(t("common.delete"))}</button>
+      </div>
+    </article>`;
   }
 
   function paymentCard(p) {
-    return `<div class="card">
-      <div class="row" style="justify-content:space-between">
-        <strong>${esc(who(p.from))} → ${esc(who(p.to))}</strong><span class="money">${vnd(p.amount)}</span>
+    return `<article class="card">
+      <div class="card-head">
+        <h3>${esc(who(p.from))} → ${esc(who(p.to))}</h3>
+        <span class="money">${vnd(p.amount)}</span>
       </div>
-      <div class="muted">${new Date(p.createdAt).toLocaleDateString()}</div>
-      <div class="row"><button data-details-pay="${p.id}">Details</button><button data-edit-pay="${p.id}">Edit</button><button class="danger" data-del-pay="${p.id}">Delete</button></div>
-    </div>`;
+      <div class="card-meta"><span>${esc(date(p.createdAt))}</span></div>
+      <div class="card-actions">
+        <button type="button" class="btn" data-details-pay="${p.id}">${esc(t("common.details"))}</button>
+        <button type="button" class="btn btn-quiet" data-edit-pay="${p.id}">${esc(t("common.edit"))}</button>
+        <button type="button" class="btn btn-quiet btn-danger" data-del-pay="${p.id}">${esc(t("common.delete"))}</button>
+      </div>
+    </article>`;
   }
-
-
 
   function showDetails(title, lines, image) {
     $("#detail-title").textContent = title;
@@ -466,14 +586,14 @@ async function viewGroup(id) {
       lines.map((l) => `<div>${l}</div>`).join("") +
       (image
         ? `<div class="thumbs"><a href="/img/${image}" target="_blank" rel="noopener"><img src="/img/${image}" alt=""></a></div>`
-        : '<p class="muted">No image.</p>');
+        : `<p class="muted">${esc(t("detail.noImage"))}</p>`);
     $("#detail-dialog").showModal();
   }
 
   function resetPay() {
     payForm.reset();
     payForm.elements.id.value = "";
-    $("#pay-title").textContent = "Add payment";
+    $("#pay-title").textContent = t("payment.add");
     state.payImage = null;
     state.payId = newId();
     drawThumbs("pay");
@@ -490,7 +610,7 @@ async function viewGroup(id) {
       const body = { id: state.payId, from: f.elements.from.value, to: f.elements.to.value, amount: amountValue(f.elements.amount), image };
       if (f.elements.id.value) await api(`/api/groups/${id}/payments/${f.elements.id.value}`, { method: "PATCH", body: JSON.stringify(body) });
       else await api(`/api/groups/${id}/payments`, { method: "POST", body: JSON.stringify(body) });
-      render();
+      await render();
     } catch (err) { fail(err); }
   };
 
@@ -498,48 +618,73 @@ async function viewGroup(id) {
     payForm.elements.id.value = p.id;
     payForm.elements.from.value = p.from;
     payForm.elements.to.value = p.to;
-    payForm.elements.amount.value = Number(p.amount).toLocaleString("vi-VN");
+    payForm.elements.amount.value = nf().format(Number(p.amount));
     state.payId = p.id;
     state.payImage = p.image;
     drawThumbs("pay");
-    $("#pay-title").textContent = "Edit payment";
+    $("#pay-title").textContent = t("payment.edit");
     $("#pay-dialog").showModal();
   }
 
+  /* tabs */
+  function selectTab(which) {
+    const billsOn = which === "bills";
+    $("#tab-bills").setAttribute("aria-selected", String(billsOn));
+    $("#tab-payments").setAttribute("aria-selected", String(!billsOn));
+    $("#panel-bills").classList.toggle("hidden", !billsOn);
+    $("#panel-payments").classList.toggle("hidden", billsOn);
+  }
+  $("#tab-bills").onclick = () => selectTab("bills");
+  $("#tab-payments").onclick = () => selectTab("payments");
+  for (const tab of [$("#tab-bills"), $("#tab-payments")]) {
+    tab.onkeydown = (e) => {
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      e.preventDefault();
+      const to = tab.id === "tab-bills" ? $("#tab-payments") : $("#tab-bills");
+      to.focus(); to.click();
+    };
+  }
+
   app.onclick = async (e) => {
-    const t = e.target;
+    const el = e.target.closest("[data-details-bill],[data-details-pay],[data-qr],[data-members],[data-new-bill],[data-new-pay],[data-remove],[data-edit-bill],[data-edit-pay],[data-del-bill],[data-del-pay]");
+    if (!el) return;
+    const d = el.dataset;
     try {
-      if (t.dataset.detailsBill) {
-        const b = bills.find((x) => x.id === t.dataset.detailsBill);
-        showDetails(b.title || "Bill", [
-          `Amount: <span class="money">${vnd(b.amount)}</span>`,
-          `Paid by: ${esc(who(b.paidBy))}`,
-          `Involved (${b.participants.length}): ${b.participants.map((e) => esc(who(e))).join(", ")}`,
-          `<span class="muted">${new Date(b.createdAt).toLocaleString()}</span>`,
+      if (d.detailsBill) {
+        const b = bills.find((x) => x.id === d.detailsBill);
+        const shares = b.participants.map((p) => {
+          const w = b.weights?.[p];
+          return w && w !== 1 ? `${esc(who(p))} ×${w}` : esc(who(p));
+        });
+        showDetails(b.title || t("detail.title"), [
+          `${esc(t("detail.amount"))}: <span class="money">${vnd(b.amount)}</span>`,
+          `${esc(t("detail.paidBy"))}: ${esc(who(b.paidBy))}`,
+          `${esc(t("detail.involved", { count: b.participants.length }))}: ${shares.join(", ")}`,
+          `<span class="muted">${esc(dateTime(b.createdAt))}</span>`,
         ], b.image);
-      } else if (t.dataset.detailsPay) {
-        const p = payments.find((x) => x.id === t.dataset.detailsPay);
+      } else if (d.detailsPay) {
+        const p = payments.find((x) => x.id === d.detailsPay);
         showDetails(`${who(p.from)} → ${who(p.to)}`, [
-          `Amount: <span class="money">${vnd(p.amount)}</span>`,
-          `<span class="muted">${new Date(p.createdAt).toLocaleString()}</span>`,
+          `${esc(t("detail.amount"))}: <span class="money">${vnd(p.amount)}</span>`,
+          `<span class="muted">${esc(dateTime(p.createdAt))}</span>`,
         ], p.image);
-      } else if (t.dataset.qr) showQr(members.find((m) => m.email === t.dataset.qr));
-      else if (t.dataset.members) $("#members-dialog").showModal();
-      else if (t.dataset.newBill) { t.closest("details").open = true; resetBill(); }
-      else if (t.dataset.newPay) { t.closest("details").open = true; resetPay(); }
-      else if (t.dataset.remove) {
-        if (state.billImage === t.dataset.remove) { state.billImage = null; drawThumbs("bill"); }
+      } else if (d.qr) showQr(members.find((m) => m.email === d.qr));
+      else if (d.members) $("#members-dialog").showModal();
+      else if (d.newBill) resetBill();
+      else if (d.newPay) resetPay();
+      else if (d.remove) {
+        if (state.billImage === d.remove) { state.billImage = null; drawThumbs("bill"); }
         else { state.payImage = null; drawThumbs("pay"); }
-      } else if (t.dataset.editBill) editBill(bills.find((b) => b.id === t.dataset.editBill));
-      else if (t.dataset.editPay) editPay(payments.find((p) => p.id === t.dataset.editPay));
-      else if (t.dataset.delBill) {
-        if (!confirm("Delete this bill?")) return;
-        await api(`/api/groups/${id}/bills/${t.dataset.delBill}`, { method: "DELETE" });
-        render();
-      } else if (t.dataset.delPay) {
-        if (!confirm("Delete this payment?")) return;
-        await api(`/api/groups/${id}/payments/${t.dataset.delPay}`, { method: "DELETE" });
-        render();
+      } else if (d.editBill) editBill(bills.find((b) => b.id === d.editBill));
+      else if (d.editPay) editPay(payments.find((p) => p.id === d.editPay));
+      else if (d.delBill) {
+        if (!confirm(t("common.deleteBill"))) return;
+        await api(`/api/groups/${id}/bills/${d.delBill}`, { method: "DELETE" });
+        await render();
+      } else if (d.delPay) {
+        if (!confirm(t("common.deletePayment"))) return;
+        await api(`/api/groups/${id}/payments/${d.delPay}`, { method: "DELETE" });
+        await render();
       }
     } catch (err) { fail(err); }
   };
@@ -549,9 +694,8 @@ async function viewGroup(id) {
     try { await navigator.clipboard.writeText(linkInput.value); }
     catch { linkInput.select(); document.execCommand("copy"); }
     const btn = $("#copy-invite");
-    if (!btn) return;
-    btn.textContent = "Copied";
-    setTimeout(() => { if (btn.isConnected) btn.textContent = "Copy"; }, 1200);
+    btn.textContent = t("members.copied");
+    setTimeout(() => { if (btn.isConnected) btn.textContent = t("members.copy"); }, 1200);
   };
 
   $("#rotate-invite").onclick = async () => {
@@ -565,22 +709,120 @@ async function viewGroup(id) {
     e.preventDefault();
     try {
       await api(`/api/groups/${id}/members`, { method: "POST", body: JSON.stringify({ email: e.target.elements.email.value }) });
-      render();
+      await render();
     } catch (err) { fail(err); }
   };
 
   $("#rename").onclick = async () => {
-    const name = prompt("Group name", group.name);
+    const name = prompt(t("group.renamePrompt"), group.name);
     if (!name || !name.trim()) return;
-    try { await api(`/api/groups/${id}`, { method: "PATCH", body: JSON.stringify({ name }) }); render(); }
+    try { await api(`/api/groups/${id}`, { method: "PATCH", body: JSON.stringify({ name }) }); await render(); }
     catch (err) { fail(err); }
   };
 
   $("#del-group").onclick = async () => {
-    if (!confirm(`Delete "${group.name}" and everything in it?`)) return;
+    if (!confirm(t("group.deleteConfirm", { name: group.name }))) return;
     try { await api(`/api/groups/${id}`, { method: "DELETE" }); location.href = "/"; }
     catch (err) { fail(err); }
   };
+}
+
+/* ---------- settings ---------- */
+
+const SCHEME_LABEL = (id) => t("scheme." + id);
+
+// Swatches are the scheme's own tokens, read off a probe element once rather than hard-coded twice.
+const schemeCache = new Map();
+function schemeStrip(id) {
+  if (!schemeCache.has(id)) {
+    const probe = document.createElement("div");
+    probe.dataset.scheme = id;
+    probe.style.cssText = "position:absolute;visibility:hidden";
+    probe.innerHTML = "<i></i>";
+    document.body.append(probe);
+    const cs = getComputedStyle(probe);
+    const dot = getComputedStyle(probe.firstElementChild);
+    schemeCache.set(id, ["--paper", "--surface", "--sunken", "--owe"].map((k) => cs.getPropertyValue(k).trim() || "transparent"));
+    probe.remove();
+  }
+  return schemeCache.get(id).map(esc);
+}
+
+function paintSettings() {
+  $("#scheme-grid").innerHTML = SCHEMES.map((s) => `
+    <button type="button" class="scheme-opt" data-scheme-id="${s.id}" aria-pressed="${s.id === scheme}" style="background:${schemeStrip(s.id)[0]}">
+      <span class="swatches" aria-hidden="true">${schemeStrip(s.id).map((c) => `<span style="background:${c}"></span>`).join("")}</span>
+      <span>${esc(SCHEME_LABEL(s.id))}</span>
+    </button>`).join("");
+  $("#lang-list").innerHTML = LANGUAGES.map((l) => `
+    <button type="button" class="btn lang-opt" data-lang="${l.code}" aria-pressed="${l.code === lang}">
+      <span>${esc(l.label)}</span><span class="muted">${l.code === DEFAULT_LANG ? esc(t("settings.default")) : ""}</span>
+    </button>`).join("");
+  $("#scheme-grid").onclick = (e) => {
+    const btn = e.target.closest("[data-scheme-id]");
+    if (!btn) return;
+    applyScheme(btn.dataset.schemeId);
+    paintSettings();
+  };
+  $("#lang-list").onclick = (e) => {
+    const btn = e.target.closest("[data-lang]");
+    if (!btn) return;
+    applyLang(btn.dataset.lang);
+    paintSettings();
+  };
+}
+
+function openSettings() {
+  paintSettings();
+  $("#settings-dialog").showModal();
+}
+
+const SHORTCUTS = [
+  ["/", "shortcuts.search"],
+  ["g", "shortcuts.newGroup"],
+  ["b", "shortcuts.newBill"],
+  ["p", "shortcuts.newPayment"],
+  ["t", "shortcuts.scheme"],
+  ["?", "shortcuts.settings"],
+  ["Esc", "shortcuts.close"],
+  ["← →", "shortcuts.filter"],
+];
+
+/* ---------- chrome ---------- */
+
+function paintChrome() {
+  document.title = t("brand");
+  $("#home").textContent = t("brand");
+  $("#home").title = t("nav.home");
+  $("#logout").textContent = t("nav.logout");
+  $("#logout").title = t("nav.logout");
+  $("#settings").title = t("nav.theme");
+  $("#settings").setAttribute("aria-label", t("nav.theme"));
+  if (meName) $("#me").textContent = meName;
+  $("#me").title = t("nav.me");
+  $("#qr-dialog .dialog-head h2").textContent = t("common.qr");
+  for (const [sel, text] of [
+    ["#profile-dialog .dialog-head h2", "profile.title"],
+    ["#profile-name-label", "profile.name"],
+    ["#profile-qr-label", "profile.qr"],
+    ["#profile-replace-label", "profile.replaceQr"],
+    ["#profile-hint", "profile.qrHint"],
+    ["#profile-save", "common.save"],
+    ["#settings-title", "settings.title"],
+    ["#settings-scheme-label", "settings.scheme"],
+    ["#settings-lang-label", "settings.language"],
+  
+  ]) {
+    const el = $(sel);
+    if (el) el.textContent = t(text);
+  }
+  $("#shortcuts-title").textContent = t("shortcuts.title");
+  $("#shortcuts-hint").innerHTML = shortcutText();
+  for (const b of $$("[data-close]")) b.textContent = t("common.close");
+}
+
+function shortcutText() {
+  return SHORTCUTS.map(([k, key]) => `<div class="shortcut"><kbd>${esc(k)}</kbd><span>${esc(t(key))}</span></div>`).join("");
 }
 
 /* ---------- router ---------- */
@@ -588,14 +830,15 @@ async function viewGroup(id) {
 let meName = "";
 
 function bindNav() {
-  $("#me").textContent = meName;
+  if (meName) $("#me").textContent = meName;
   $("#logout").onclick = () => { location.href = "/cdn-cgi/access/logout"; };
   $("#me").onclick = () => openProfile().catch(fail);
+  $("#settings").onclick = openSettings;
   paintNotify();
   $("#home").onclick = (e) => {
     e.preventDefault();
     if (location.pathname === "/") render();
-    else { location.href = "/"; }
+    else location.href = "/";
   };
 }
 
@@ -604,6 +847,7 @@ $("#profile-form").onsubmit = async (e) => {
   const f = e.target;
   try {
     const name = f.elements.name.value.trim();
+    if (!name) return alert(t("error.name"));
     await api("/api/me", { method: "PATCH", body: JSON.stringify({ name }) });
     const file = f.elements.qr.files[0];
     if (file) {
@@ -615,7 +859,7 @@ $("#profile-form").onsubmit = async (e) => {
     $("#me").textContent = name;
     f.elements.qr.value = "";
     $("#profile-dialog").close();
-    render();
+    await render();
   } catch (err) { fail(err); }
 };
 
@@ -629,16 +873,18 @@ $("#qr-preview").onclick = async (e) => {
 };
 
 async function joinGroup(token) {
-  app.innerHTML = '<p class="muted">Joining…</p>';
+  app.innerHTML = `<p class="muted">${esc(t("join.joining"))}</p>`;
   try {
     const g = await api(`/api/join/${encodeURIComponent(token)}`, { method: "POST" });
     location.href = `/${g.id}`;
   } catch (err) {
-    app.innerHTML = `<p class="danger">${esc(err.message)}</p><p><a href="/">← groups</a></p>`;
+    app.innerHTML = `<div class="empty"><p class="error">${esc(t("join.failed", { error: errorText(err.message) }))}</p>
+      <p><a href="/">← ${esc(t("join.back"))}</a></p></div>`;
   }
 }
 
 async function render() {
+  paintChrome();
   const join = /^\/join\/([0-9a-fA-F-]{36})\/?$/.exec(location.pathname);
   if (join) { bindNav(); return joinGroup(join[1]); }
   const m = /^\/([0-9a-f-]{36})\/?$/.exec(location.pathname);
@@ -646,12 +892,12 @@ async function render() {
     .then((me) => { meName = me.name; $("#me").textContent = me.name; })
     .catch(() => {});
   bindNav();
-  app.innerHTML = '<p class="muted">Loading…</p>';
+  app.innerHTML = `<div class="stack" aria-busy="true"><div class="skeleton" style="width:45%"></div><div class="skeleton" style="width:75%"></div></div>`;
   try {
     if (m) await viewGroup(m[1]);
     else await viewGroups();
   } catch (err) {
-    if (err.message !== "unauthenticated") app.innerHTML = `<p class="danger">${esc(err.message)}</p>`;
+    if (err.message !== "unauthenticated") app.innerHTML = `<p class="error">${esc(errorText(err.message))}</p>`;
   }
 }
 
@@ -667,16 +913,47 @@ document.addEventListener("pointerdown", (e) => {
 document.addEventListener("click", (e) => {
   // Dialogs live both inside #app and in static markup, so close here, not per view.
   const closer = e.target.closest?.("[data-close]");
-  if (closer) $("#" + closer.dataset.close).close();
+  if (closer) $("#" + closer.dataset.close)?.close();
   if (pressedBackdrop && e.target === pressedBackdrop) pressedBackdrop.close();
   pressedBackdrop = null;
 });
 
+// Shortcuts act on what is on screen; a dialog or a text field keeps its own keys.
+document.addEventListener("keydown", (e) => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const typing = e.target instanceof HTMLElement && (e.target.closest("input, select, textarea, dialog") && e.key !== "Escape");
+  if (e.key === "Escape") return; // native dialog close
+  if (typing) return;
+  if (e.key === "?") { e.preventDefault(); openSettings(); }
+  else if (e.key === "t") {
+    e.preventDefault();
+    const i = SCHEMES.findIndex((s) => s.id === scheme);
+    applyScheme(SCHEMES[(i + 1) % SCHEMES.length].id);
+    paintSettings();
+  } else if (e.key === "g" && location.pathname === "/") {
+    e.preventDefault();
+    $("[data-new-group]")?.click();
+  } else if (e.key === "b" && /^\/([0-9a-f-]{36})\/?$/.test(location.pathname)) {
+    e.preventDefault();
+    $("[data-new-bill]")?.click();
+  } else if (e.key === "p" && /^\/([0-9a-f-]{36})\/?$/.test(location.pathname)) {
+    e.preventDefault();
+    $("[data-new-pay]")?.click();
+  } else if (e.key === "/" && location.pathname === "/") {
+    e.preventDefault();
+    $("#search input")?.focus();
+  }
+});
+
 window.addEventListener("popstate", render);
+
+applyScheme(scheme, false);
+applyLang(lang, false);
 render();
 
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("/sw.js").catch(() => {});
 }
 </script>
+</body>
 </html>

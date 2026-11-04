@@ -1,7 +1,8 @@
 // Minimal offline shell: navigations fall back to the cached page, API calls are never cached.
 // Bump CACHE when the shell changes.
-const CACHE = "bills-v2";
-const SHELL = ["/", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
+const CACHE = "bills-v3";
+const SHELL = ["/", "/app.css", "/i18n.js", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png",
+  "/fonts/publicsans-latin.woff2", "/fonts/publicsans-vi.woff2"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
