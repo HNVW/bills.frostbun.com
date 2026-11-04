@@ -212,7 +212,13 @@ a.ledger-row:hover { background: var(--surface); }
 .balance-row { display: grid; grid-template-columns: 1fr auto; gap: var(--sp-3); align-items: baseline; padding: var(--sp-2) 0; border-bottom: 1px solid var(--rule); }
 .balance-row:last-child { border-bottom: 0; }
 .settlements { display: grid; gap: var(--sp-2); }
-.settlement { display: grid; grid-template-columns: 1fr auto; gap: var(--sp-3); align-items: center; }
+/* Two names plus an arrow is too much for a phone in one line beside the amount and a button, so
+   the names get their own full-width row and amount + action share the row below. */
+.settlement { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--sp-2) var(--sp-3); align-items: center; }
+.settlement > span:first-child { grid-column: 1 / -1; overflow-wrap: anywhere; }
+@media (max-width: 480px) {
+  .settlement > span:first-child { overflow-wrap: break-word; }
+}
 
 .money { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .owe { color: var(--owe); }
@@ -288,13 +294,12 @@ dialog {
   background: var(--paper); color: var(--ink);
   box-shadow: var(--shadow-modal);
 }
-/* Horizontal padding lives on the children, so a full-bleed sticky bar cannot outgrow the dialog. */
+/* Horizontal padding lives on the children, so a full-bleed sticky bar cannot outgrow the dialog.
+   A form is a plain block that carries the padding for its own contents. */
 dialog > * { padding-inline: var(--sp-5); }
-dialog > form { padding-inline: 0; }
-dialog > form > * { padding-inline: var(--sp-5); }
-/* An implicit `auto` grid column grows to its widest child, so one long footer button stretched
-   every row past the dialog. Pin the column to the container and let the button shrink. */
-dialog > form { grid-template-columns: minmax(0, 1fr); }
+dialog > form { padding-inline: 0; grid-template-columns: minmax(0, 1fr); }
+dialog > form > * { padding-inline: var(--sp-5); min-width: 0; }
+
 dialog .dialog-head {
   display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3);
   position: sticky; top: calc(var(--sp-5) * -1); z-index: 1;
@@ -348,7 +353,10 @@ dialog::backdrop { background: var(--scrim); }
 /* the first section sits right under the sticky head, so it needs no rule above it */
 .settings-section--first { margin-top: 0; padding-top: 0; border-top: 0; }
 
-.member-list { list-style: none; padding: 0; margin: 0 0 var(--sp-4); }
+.member-list {
+  list-style: none; margin: 0 0 var(--sp-4);
+  padding-inline: var(--sp-5); /* matches the dialog's own child padding */
+}
 .member-list li {
   display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3);
   padding: var(--sp-2) 0; border-bottom: 1px solid var(--rule);
@@ -408,9 +416,11 @@ kbd { padding: 0 var(--sp-1); border: 1px solid var(--rule-strong); border-radiu
 nav { flex-wrap: nowrap; }
 .brand { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .icon-btn { white-space: nowrap; }
+/* Your name is the only label left in the nav now that the bell and Log out moved into settings, so
+   it stays on a phone and truncates instead of disappearing. */
 #me { max-width: 18ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 560px) {
-  #me { display: none; }
+  #me { max-width: 12ch; }
   .nav-actions { gap: 0; }
 }
 
