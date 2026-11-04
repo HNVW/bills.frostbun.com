@@ -21,9 +21,15 @@ self.addEventListener("install", (event) => {
   );
 });
 
-// Old caches are left alone. Bumping CACHE opens a fresh one, and the previous bills-meta-* entries stay
-// behind harmlessly; deleting by prefix is the part that once risked touching other Cache Storage.
-self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));
+// Drop caches left by older versions of this worker. The bills- prefix is this project's own namespace,
+// so nothing else on the origin can match; the current one is kept.
+self.addEventListener("activate", (event) => {
+  event.waitUntil(
+    caches.keys()
+      .then((keys) => Promise.all(keys.filter((k) => k.startsWith("bills-") && k !== CACHE).map((k) => caches.delete(k))))
+      .then(() => self.clients.claim()),
+  );
+});
 
 // The offline page is carried in this file rather than cached, so there is nothing to invalidate and
 // nothing to go stale: the worker and its fallback always ship together.

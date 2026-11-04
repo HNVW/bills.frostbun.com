@@ -88,7 +88,7 @@ needs `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in the org secrets).
   nicety: Chrome fetches a manifest link without credentials, so behind Cloudflare Access the request is answered
   with a 302 to the login origin, and Chrome refuses to parse a cross-origin manifest — the installer then reports
   "No manifest detected". The precache fetch runs inside the worker, so it carries the session cookie and succeeds.
-  Bump `CACHE` in `sw.js` when the manifest or icons change; old caches are left behind rather than deleted.
+  Bump `CACHE` in `sw.js` when the manifest or icons change; on activate the worker deletes other `bills-*` caches.
 - The service worker does **not** cache the app: every screen needs `/api/*`, so a cached shell could only render an
   empty page. Its other fetch job is a failed navigation, which gets a self-contained "no connection" page carried as a
   string in `sw.js`. Push notifications are unaffected.
