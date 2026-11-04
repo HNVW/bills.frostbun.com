@@ -5,7 +5,7 @@ Installable as a PWA; bills involving you arrive as Web Push notifications.
 
 The UI is Vietnamese by default with an English switch, and ships eight colour schemes — four light (paper, newsprint,
 moss, porcelain) and four dark (midnight, ink, plum, forest) — chosen in the settings dialog (gear in the nav, or `?`).
-Both live in `localStorage` and are applied by a four-line inline script before first paint, so neither flashes.
+Both live in `localStorage` and are applied by an inline script before first paint, so neither flashes.
 Copy lives in `public/i18n.js` (flat dotted keys, `{param}` interpolation); a missing Vietnamese key falls back to
 English rather than showing a raw key. Fonts are self-hosted (`public/fonts/`, Public Sans variable, latin + vietnamese
 subsets) so a slow CDN never swaps the face mid-render.
@@ -18,7 +18,8 @@ account id.
 
 1. Set `routes[0].pattern` to a hostname in the deploying account's zone. To deploy without a custom domain, delete
    `routes` and set `workers_dev: true`; put the Access application on the `*.workers.dev` hostname instead.
-2. Create the resources by hand — `bunx wrangler deploy` does not create them, because `wrangler.jsonc` pins both ids/names:
+2. Create the resources by hand — `bunx wrangler deploy` does not create them, because `wrangler.jsonc` pins both
+   ids/names:
 
    ```
    bunx wrangler d1 create bills
@@ -72,23 +73,24 @@ Add the VAPID variables to `.dev.vars` to exercise push locally.
 bun run deploy
 ```
 
-`bun run deploy` is `wrangler deploy` (installed as a dev dependency). GitHub Actions runs the same on push to `master` (installs deps with Bun,
-needs `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in the org secrets).
+`bun run deploy` is `wrangler deploy` (installed as a dev dependency). GitHub Actions runs the same on push to
+`master` (installs deps with Bun, needs `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in the org secrets).
 
 ## Routes
 
 - `GET /` — your groups.
 - `GET /<group-id>` — one group (assets fall back to `index.html` via `not_found_handling`).
 - `GET /join/<token>` — join screen; posts the token, then redirects to the group.
-- Notifications: browser Web Push (VAPID). The nav bell toggles this browser's subscription; adding a bill pushes to
-  every involved member except the person who added it. Secrets `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`
-  must be set on the Worker (`wrangler secret put`); with them absent, push is silently skipped.
+- Notifications: browser Web Push (VAPID). The Notifications row in the settings dialog toggles this browser's
+  subscription; adding a bill pushes to every involved member except the person who added it. Secrets
+  `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` must be set on the Worker (`wrangler secret put`); with them
+  absent, push is silently skipped.
 - `/manifest.webmanifest`, `/sw.js`, `/icon-{192,512}.png` — installable PWA. The service worker precaches exactly
-  those three files and serves them cache-first, which is an installability requirement rather than an offline
-  nicety: Chrome fetches a manifest link without credentials, so behind Cloudflare Access the request is answered
-  with a 302 to the login origin, and Chrome refuses to parse a cross-origin manifest — the installer then reports
-  "No manifest detected". The precache fetch runs inside the worker, so it carries the session cookie and succeeds.
-  Bump `CACHE` in `sw.js` when the manifest or icons change; on activate the worker deletes other `bills-*` caches.
+  those three and serves them cache-first. This is an installability requirement, not an offline nicety: Chrome fetches
+  a manifest link without credentials, Access answers that anonymous request with a 302 to the login origin, and Chrome
+  refuses to parse a cross-origin manifest — the installer then reports "No manifest detected". The precache fetch runs
+  inside the worker, so it carries the session cookie and succeeds. Bump `CACHE` when the manifest or icons change; on
+  activate the worker deletes other `bills-*` caches.
 - The service worker does **not** cache the app: every screen needs `/api/*`, so a cached shell could only render an
   empty page. Its other fetch job is a failed navigation, which gets a self-contained "no connection" page carried as a
   string in `sw.js`. Push notifications are unaffected.
@@ -106,10 +108,10 @@ needs no prior membership — it is how you join.
 | `GET /api/groups/:id` | group, members, `inviteToken` |
 | `GET /api/groups/:id/view` | the group screen in one round trip: group, `inviteToken`, members, bills, payments, summary |
 | `PATCH /api/groups/:id` | rename (any member) |
-| `DELETE /api/groups/:id` | delete with all data (creator) |
+| `DELETE /api/groups/:id` | delete with all data (any member) |
 | `POST /api/groups/:id/invite` | rotate invite token (member) |
 | `POST /api/groups/:id/members` | invite by email (member) |
-| `DELETE /api/groups/:id/members/:email` | leave, or remove others (creator) |
+| `DELETE /api/groups/:id/members/:email` | leave, or remove anyone (any member) |
 | `GET·POST /api/groups/:id/bills` | list / create bill |
 | `PATCH·DELETE /api/groups/:id/bills/:billId` | edit / delete bill |
 | `GET·POST /api/groups/:id/payments` | list / create payment |
@@ -127,25 +129,25 @@ digits per locale (`100.000` in vi, `100,000` in en) and sends the bare number. 
 participant email to weight (above 0, at most 100): a person of weight 2 pays twice the share of weight 1. Its keys
 *are* the participants, in split order — there is no separate list to keep in sync. An absent map means the payer
 alone at weight 1. Errors are `{error}` with `400` (invalid input),
-`401` (no Access identity), `403` (not a member / not the creator), `404`, or `409` (entry id already used, referenced
-image vanished).
+`401` (no Access identity), `403` (not a member), `404`, or `409` (entry id already used, referenced image vanished).
 
 ## Data
 
 - `groups(id, name, created_by, invite_token, created_at)`, `members(group_id, email, created_at)`,
   `bills(amount VND integer, paid_by, weights JSON, image)`, `payments(from, to, amount, image)`,
   `users(email, name, qr)`, `push_subscriptions(endpoint, email, p256dh, auth)`.
-- `users(email, name)` is the display name, `users.qr` the optional payment-QR key. Default is the Access identity name, fetched once from
-  `/cdn-cgi/access/get-identity` (the app JWT has no name claim) and stored; an email-valued row is re-defaulted on the
-  next visit. Override with `PATCH /api/me {"name"}` (the nav button). Email stays the credential.
+- `users(email, name)` is the display name, `users.qr` the optional payment-QR key. Default is the Access identity
+  name, fetched once from `/cdn-cgi/access/get-identity` (the app JWT has no name claim) and stored; an email-valued
+  row is re-defaulted on the next visit. Override with `PATCH /api/me {"name"}` (the nav name). Email stays the credential.
 - Log out is the Access logout endpoint: `/cdn-cgi/access/logout`.
 - R2 `bills` placement is whatever the account first gave the name (the placement hint is ignored for an existing name).
 - Schema lives in `migrations/0001_init.sql`, one idempotent file covering all tables; re-running it is safe.
 - Invites: each group has an `invite_token`; the members dialog shows `/<host>/join/<token>` plus Copy and Rotate.
   `POST /api/join/:token` adds the signed-in caller and returns the group (idempotent; rotating invalidates the old token).
 - Membership is the whole permission model: any member can create, edit and delete any bill or payment, rename the
-  group, invite or remove members (each row in the members dialog has a Remove button), and delete the whole group. There is no owner role — `created_by` is recorded for
-  provenance only. The app is built for a trusted group of friends; the boundary is membership, not authorship.
+  group, invite or remove members (each row in the members dialog has a Remove button), and delete the whole group.
+  There is no owner role — `created_by` is recorded for provenance only. The app is built for a trusted group of
+  friends; the boundary is membership, not authorship.
 - R2 layout: `qrs/<email>`, `bills/<group-id>/<bill-id>`, `payments/<group-id>/<payment-id>`. One object per entry at
   a key derived entirely from the entry (`entryKey`, `qrKey`) — no extra random component, no extension.
 - Image upload: `POST /api/groups/:id/bills/:billId/image` (or `.../payments/:paymentId/image`), multipart `file`,
@@ -161,21 +163,28 @@ image vanished).
 - Keys written before the layout split (`<group-id>/<uuid>.<ext>`) are still served (`LEGACY_RE`).
 - Personal QR: `POST /api/me/qr` stores the key in `users.qr` (`qrs/<email>`) and the object in R2; `DELETE` clears
   both. Readable by you and by anyone sharing a group with you (`canSeeQr`), served at `/img/qrs/<email>`. Clicking a
-  name in a group's summary opens it; the nav name opens a dialog to edit your display name and replace/remove the QR.
+  name in a group's summary opens it; the nav name opens the profile dialog, which edits the display name, replaces or
+  removes the QR, and holds Log out.
 - One push subscription row per browser: a row is identified by its endpoint, so enabling notifications in a
   second browser adds a second row instead of replacing the first. Re-enabling in the same browser reuses its row
   (browsers rotate the endpoint on resubscribe, which lands as a new row — the stale one is deleted on the next
   send that answers `404`/`410`).
-- Balance display is from the viewer's side and never uses a sign: the words "you pay" / "you get back" (vi: "bạn trả" /
-  "bạn nhận lại") sit beside an unsigned amount, coloured `--owe` / `--owed`, and |balance| < 1000 ₫ shows `settled`. The
-  API's `myBalance` keeps the raw payer-credit sign (positive = others owe you), so the direction you see is the inverse
-  of the JSON number.
+- Dialogs focus their first field only at 620px and wider: on a phone the keyboard would open over a dialog
+  nobody has read yet. Every dialog's head and footer stay pinned while its body scrolls.
+- Balance display is from the viewer's side and never uses a sign: the words "you pay" / "you get back" (vi: "bạn trả"
+  / "bạn nhận lại") sit beside an unsigned amount, coloured `--owe` / `--owed`, and |balance| < 1000 ₫ shows `settled`.
+  The API's `myBalance` keeps the raw payer-credit sign (positive = others owe you), so the direction you see is the
+  inverse of the JSON number. Other members' rows use third-person verbs ("owes" / "is owed").
 - Bill cards: a 2px left edge in `--owed` when you paid, `--owe` when you are involved but did not pay, plain otherwise.
-  Details (names, images, payer, per-person weights) live in the card's Details dialog; the card shows the participant
-  count.
-- Summary: each bill adds `amount` to the payer and subtracts that person's weighted share (leftover đồng go one each to
-  the heaviest weights, then declaration order, so the shares sum to the amount) from each participant; payments shift
-  balances; greedy min-cash-flow produces the transfer list.
-- Weights: the bill form shows a number field per member beside its checkbox, disabled when the member is unchecked.
-  `bills.weights` is the only stored list of involved people; `participants` in the API response is derived from its
-  keys, so a bill with no participants and a bill with an empty weights map are the same rejected state.
+  The card itself opens Details (names, images, payer, per-person weights); the pencil beside the description opens the
+  editor, which also holds Delete. Payment cards work the same way.
+- Quick pay: each settle-up row carries a button at its right — Pay when you are the payer, Confirm when someone owes
+  you. It shows the payee's QR and the exact amount, then Done writes one payment row and repaints. The transfer is
+  `from -> to` either way, so confirming has the same effect as recording it yourself.
+- Summary: each bill adds `amount` to the payer and subtracts that person's weighted share from each participant
+  (leftover đồng go one each to the heaviest weights, then declaration order, so the shares sum to the amount);
+  payments shift balances; greedy min-cash-flow produces the transfer list.
+- Weights: the bill form shows a stepper (− / + by one, clamped 1–100) per member beside its checkbox, disabled when
+  the member is unchecked. `bills.weights` is the only stored list of involved people; `participants` in the API
+  response is derived from its keys, so a bill with no participants and a bill with an empty weights map are the same
+  rejected state.

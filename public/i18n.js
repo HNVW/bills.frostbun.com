@@ -4,7 +4,7 @@ export const DICTS = {
   "en-us": {
     "brand": "Shared Bills",
     "nav.me": "Your profile — name and payment QR",
-    "nav.theme": "Colour scheme and language",
+    "nav.theme": "Settings: notifications, language, colour scheme, shortcuts",
     "nav.logout": "Log out",
     "nav.home": "All groups",
 
@@ -119,7 +119,7 @@ export const DICTS = {
     "profile.qrHint": "Shown to people who share a group with you, so they can scan it when they pay you.",
     "profile.noQr": "No QR yet — upload a screenshot of your bank transfer QR.",
 
-    "settings.title": "Appearance",
+    "settings.title": "Settings",
     "settings.scheme": "Colour scheme",
     "settings.language": "Language",
     "settings.default": "default",
@@ -183,7 +183,7 @@ export const DICTS = {
   "vi-vn": {
     "brand": "Hoá đơn chung",
     "nav.me": "Hồ sơ của bạn — tên và mã QR thanh toán",
-    "nav.theme": "Bảng màu và ngôn ngữ",
+    "nav.theme": "Cài đặt: thông báo, ngôn ngữ, bảng màu, phím tắt",
     "nav.logout": "Đăng xuất",
     "nav.home": "Tất cả nhóm",
 
@@ -298,7 +298,7 @@ export const DICTS = {
     "profile.qrHint": "Hiển thị cho những người cùng nhóm để họ quét khi chuyển tiền cho bạn.",
     "profile.noQr": "Chưa có mã QR — tải lên ảnh chụp mã chuyển khoản của bạn.",
 
-    "settings.title": "Giao diện",
+    "settings.title": "Cài đặt",
     "settings.scheme": "Bảng màu",
     "settings.language": "Ngôn ngữ",
     "settings.default": "mặc định",
