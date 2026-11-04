@@ -1,17 +1,19 @@
-// Push notifications only. The app is not cached: every screen needs /api/*, so a cached shell could
-// only ever render an empty page, and its version string had to be bumped by hand with every deploy.
+// Push notifications, a failed-navigation fallback, and the PWA manifest.
+//
+// The manifest is answered from this file, not from the network.
+//
+// Why: Chrome fetches a <link rel="manifest"> target without credentials. Behind Cloudflare Access that
+// request is answered with a 302 to the login origin, and Chrome refuses to parse a manifest that arrived
+// cross-origin — the installer reports "No manifest detected" and the install prompt disappears.
+// Responding from the worker means the request never reaches Access.
+// The app itself is still uncached: every screen needs /api/*, so a cached shell could only be empty.
+//
+// The manifest body is embedded here rather than precached: a precache would have to fetch it at install
+// time, which is the very request that fails. Keep it in sync with public/manifest.webmanifest.
+const MANIFEST = "{\n  \"name\": \"Ho\u00e1 \u0111\u01a1n chung\",\n  \"short_name\": \"Ho\u00e1 \u0111\u01a1n\",\n  \"description\": \"Chia ho\u00e1 \u0111\u01a1n v\u00e0 thanh to\u00e1n v\u1edbi b\u1ea1n b\u00e8\",\n  \"lang\": \"vi\",\n  \"start_url\": \"/\",\n  \"scope\": \"/\",\n  \"display\": \"standalone\",\n  \"background_color\": \"#f9f6f2\",\n  \"theme_color\": \"#f9f6f2\",\n  \"icons\": [\n    { \"src\": \"/icon-192.png\", \"sizes\": \"192x192\", \"type\": \"image/png\", \"purpose\": \"any\" },\n    { \"src\": \"/icon-512.png\", \"sizes\": \"512x512\", \"type\": \"image/png\", \"purpose\": \"any\" },\n    { \"src\": \"/icon-512.png\", \"sizes\": \"512x512\", \"type\": \"image/png\", \"purpose\": \"maskable\" }\n  ]\n}";
 
 self.addEventListener("install", () => self.skipWaiting());
-
-// Older versions of this worker cached the shell under bills-vN. Drop only those: deleting every key
-// would take out any other Cache Storage the origin owns.
-self.addEventListener("activate", (event) => {
-  event.waitUntil(
-    caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k.startsWith("bills-")).map((k) => caches.delete(k))))
-      .then(() => self.clients.claim()),
-  );
-});
+self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));
 
 // The offline page is carried in this file rather than cached, so there is nothing to invalidate and
 // nothing to go stale: the worker and its fallback always ship together.
@@ -51,8 +53,17 @@ const OFFLINE = `<!doctype html>
 // else is intercepted: assets and the API go straight to the network, as they always did.
 self.addEventListener("fetch", (event) => {
   const { request } = event;
-  if (request.method !== "GET" || request.mode !== "navigate") return;
-  if (new URL(request.url).origin !== location.origin) return;
+  if (request.method !== "GET") return;
+  const url = new URL(request.url);
+  if (url.origin !== location.origin) return;
+
+  // The manifest must not depend on the network answering: see the note above.
+  if (url.pathname === "/manifest.webmanifest") {
+    event.respondWith(new Response(MANIFEST, { headers: { "content-type": "application/manifest+json" } }));
+    return;
+  }
+
+  if (request.mode !== "navigate") return;
   event.respondWith(
     fetch(request).catch(() => new Response(OFFLINE, { status: 200, headers: { "content-type": "text/html; charset=utf-8" } })),
   );
