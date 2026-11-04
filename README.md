@@ -135,8 +135,9 @@ image vanished).
 - Schema lives in `migrations/0001_init.sql`, one idempotent file covering all tables; re-running it is safe.
 - Invites: each group has an `invite_token`; the members dialog shows `/<host>/join/<token>` plus Copy and Rotate.
   `POST /api/join/:token` adds the signed-in caller and returns the group (idempotent; rotating invalidates the old token).
-- Membership is the whole permission model: any member can create, edit and delete any bill or payment in the group;
-  any member can rename the group or leave it themselves, and only the creator can delete the group or remove others.
+- Membership is the whole permission model: any member can create, edit and delete any bill or payment, rename the
+  group, invite or remove members, and delete the whole group. There is no owner role — `created_by` is recorded for
+  provenance only. The app is built for a trusted group of friends; the boundary is membership, not authorship.
 - R2 layout: `qrs/<email>`, `bills/<group-id>/<bill-id>`, `payments/<group-id>/<payment-id>`. One object per entry at
   a key derived entirely from the entry (`entryKey`, `qrKey`) — no extra random component, no extension.
 - Image upload: `POST /api/groups/:id/bills/:billId/image` (or `.../payments/:paymentId/image`), multipart `file`,

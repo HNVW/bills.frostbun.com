@@ -408,9 +408,7 @@ on("PATCH", "/api/groups/:id", async ({ req, env, email, p }) => {
 
 on("DELETE", "/api/groups/:id", async ({ env, email, p }) => {
   const [id] = p;
-  const g = await env.DB.prepare("SELECT created_by FROM groups WHERE id = ?").bind(id).first<{ created_by: string }>();
-  if (!g) return error("not found", 404);
-  if (g.created_by !== email) return error("only the group creator can delete it", 403);
+  if (!(await isMember(env, id, email))) return error("forbidden", 403);
   await removeGroupData(env, id);
   return json({ ok: true });
 });
@@ -448,11 +446,7 @@ on("POST", "/api/groups/:id/members", async ({ req, env, email, p }) => {
 on("DELETE", "/api/groups/:id/members/:member", async ({ env, email, p }) => {
   const [id, raw] = p;
   const target = normEmail(decodeURIComponent(raw));
-  const g = await env.DB.prepare("SELECT created_by FROM groups WHERE id = ?").bind(id).first<{ created_by: string }>();
-  if (!g) return error("not found", 404);
-  const caller = await isMember(env, id, email) ? email : "";
-  if (!caller) return error("forbidden", 403);
-  if (target !== caller && g.created_by !== caller) return error("only the creator can remove others", 403);
+  if (!(await isMember(env, id, email))) return error("forbidden", 403);
   await env.DB.prepare("DELETE FROM members WHERE group_id = ? AND email = ?").bind(id, target).run();
   if (!(await membersOf(env, id)).length) await removeGroupData(env, id);
   return json({ ok: true });
