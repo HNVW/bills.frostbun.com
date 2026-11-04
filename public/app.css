@@ -241,6 +241,9 @@ a.ledger-row:hover { background: var(--surface); }
   display: inline-block; padding: 0 var(--sp-2); border-radius: var(--r-pill);
   border: 1px solid var(--rule-strong); font-size: var(--text-xs); font-weight: 500; color: var(--ink-2);
 }
+/* .chip sets its own colour, so the signal needs a stronger selector than the bare .owe/.owed above */
+.chip.owe { color: var(--owe); border-color: var(--owe); }
+.chip.owed { color: var(--owed); border-color: var(--owed); }
 .row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
 .stack { display: grid; gap: var(--sp-3); }
 
