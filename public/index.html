@@ -393,14 +393,14 @@ async function viewGroup(id) {
       <div class="row" style="justify-content:flex-end;margin-bottom:var(--sp-3)">
         <button type="button" class="btn btn-primary" data-new-bill="1">${esc(t("group.addBill"))}</button>
       </div>
-      ${bills.length ? bills.map((b) => billCard(b)).join("") : `<div class="empty">${esc(t("group.noBills"))}<br><button type="button" class="btn btn-primary" data-new-bill="1">${esc(t("group.addBill"))}</button></div>`}
+      ${bills.length ? bills.map((b) => billCard(b)).join("") : `<div class="empty">${esc(t("group.noBills"))}</div>`}
     </section>
 
     <section id="panel-payments" role="tabpanel" aria-labelledby="tab-payments" class="hidden">
       <div class="row" style="justify-content:flex-end;margin-bottom:var(--sp-3)">
         <button type="button" class="btn btn-primary" data-new-pay="1">${esc(t("group.addPayment"))}</button>
       </div>
-      ${payments.length ? payments.map((p) => paymentCard(p)).join("") : `<div class="empty">${esc(t("group.noPayments"))}<br><button type="button" class="btn btn-primary" data-new-pay="1">${esc(t("group.addPayment"))}</button></div>`}
+      ${payments.length ? payments.map((p) => paymentCard(p)).join("") : `<div class="empty">${esc(t("group.noPayments"))}</div>`}
     </section>
 
     <dialog id="members-dialog" aria-labelledby="members-title">
@@ -445,7 +445,7 @@ async function viewGroup(id) {
         </fieldset>
         <label><span>${esc(t("bill.image"))}</span><input name="file" type="file" accept="image/*"></label>
         <div class="thumbs" id="bill-thumbs"></div>
-        <div class="dialog-foot dialog-foot--split">
+        <div class="dialog-foot">
           <button type="button" class="btn btn-danger hidden" data-del-bill="" id="bill-delete">${esc(t("common.delete"))}</button>
           <button class="btn btn-primary">${esc(t("bill.save"))}</button>
         </div>
@@ -462,7 +462,7 @@ async function viewGroup(id) {
         <label><span>${esc(t("bill.amount"))}</span><input name="amount" type="text" inputmode="numeric" autocomplete="off" placeholder="${esc(t("bill.amountPlaceholder"))}" required></label>
         <label><span>${esc(t("payment.image"))}</span><input name="file" type="file" accept="image/*"></label>
         <div class="thumbs" id="pay-thumbs"></div>
-        <div class="dialog-foot dialog-foot--split">
+        <div class="dialog-foot">
           <button type="button" class="btn btn-danger hidden" data-del-pay="" id="pay-delete">${esc(t("common.delete"))}</button>
           <button class="btn btn-primary">${esc(t("payment.save"))}</button>
         </div>
@@ -472,17 +472,17 @@ async function viewGroup(id) {
     <dialog id="quickpay-dialog" aria-labelledby="quickpay-title">
       <div class="dialog-head"><h2 id="quickpay-title"></h2>
         <button type="button" class="btn btn-quiet" data-close="quickpay-dialog">${esc(t("common.close"))}</button></div>
+      <div class="dialog-actions">
+        <button type="button" class="btn" data-close="quickpay-dialog">${esc(t("common.cancel"))}</button>
+        <button type="button" class="btn btn-primary" id="quickpay-done">${esc(t("quickpay.done"))}</button>
+      </div>
       <div class="dialog-body">
-        <div id="quickpay-qr"></div>
         <div class="summary-total">
           <span class="muted">${esc(t("detail.amount"))}</span>
           <span class="amount num" id="quickpay-amount"></span>
         </div>
+        <div id="quickpay-qr"></div>
         <p class="muted">${esc(t("quickpay.hint"))}</p>
-      </div>
-      <div class="dialog-foot">
-        <button type="button" class="btn" data-close="quickpay-dialog">${esc(t("common.cancel"))}</button>
-        <button type="button" class="btn btn-primary" id="quickpay-done">${esc(t("quickpay.done"))}</button>
       </div>
     </dialog>
 
@@ -649,7 +649,7 @@ async function viewGroup(id) {
     $("#detail-body").innerHTML =
       lines.map((l) => `<div>${l}</div>`).join("") +
       (image
-        ? `<div class="thumbs"><a href="/img/${image}" target="_blank" rel="noopener"><img src="/img/${image}" alt=""></a></div>`
+        ? `<img class="qr-img" src="/img/${image}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('p'),{className:'muted',textContent:'${esc(t("detail.noImage"))}'}))">`
         : `<p class="muted">${esc(t("detail.noImage"))}</p>`);
     $("#detail-dialog").showModal();
   }
@@ -723,7 +723,7 @@ async function viewGroup(id) {
     $("#quickpay-title").textContent = t("quickpay.title", { name: m.name });
     $("#quickpay-amount").textContent = vnd(amount);
     $("#quickpay-qr").innerHTML = m.qr
-      ? `<img src="${esc(m.qr)}" alt="" style="border-radius:var(--r-sm);border:1px solid var(--rule);margin-inline:auto;max-width:min(100%,280px)">`
+      ? `<img class="qr-img" src="${esc(m.qr)}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('p'),{className:'muted',textContent:'${esc(t("common.noQr"))}'}))">`
       : `<p class="muted">${esc(t("common.noQr"))}</p>`;
     const done = $("#quickpay-done");
     done.disabled = false;
@@ -1025,6 +1025,8 @@ document.addEventListener("pointerdown", (e) => {
   pressedBackdrop = e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom ? d : null;
 });
 document.addEventListener("click", (e) => {
+  // A receipt or QR is shown at reading size in place; one click expands it to the dialog's height.
+  if (e.target.classList?.contains("qr-img")) { e.target.classList.toggle("qr-img--full"); return; }
   // Dialogs live both inside #app and in static markup, so close here, not per view.
   const closer = e.target.closest?.("[data-close]");
   if (closer) $("#" + closer.dataset.close)?.close();
