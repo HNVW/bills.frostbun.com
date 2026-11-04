@@ -360,7 +360,9 @@ async function viewGroup(id) {
           <div class="settlement">
             <span>${esc(s.fromName)} → ${esc(s.toName)}</span>
             <span class="row" style="justify-content:flex-end"><span class="money">${vnd(s.amount)}</span>${
-              s.from === me ? `<button type="button" class="btn icon-btn" data-qr="${esc(s.to)}" title="${esc(t("group.showQr", { name: s.toName }))}">${esc(t("common.qr"))}</button>` : ""
+              s.from === me
+                ? `<button type="button" class="btn" data-quickpay="${esc(s.to)}" data-amount="${s.amount}">${esc(t("quickpay.pay"))}</button>`
+                : `<button type="button" class="btn icon-btn" data-qr="${esc(s.to)}" title="${esc(t("group.showQr", { name: s.toName }))}">${esc(t("common.qr"))}</button>`
             }</span>
           </div>`).join("")}</div>`
         : `<p class="muted">${esc(t("group.allSettled"))}</p>`}
@@ -414,7 +416,11 @@ async function viewGroup(id) {
           <p class="muted" style="font-size:var(--text-xs)">${esc(t("bill.weightHint"))}</p>
           ${members.map((m) => `<div class="weight-row">
             <label class="check"><input type="checkbox" name="participants" value="${esc(m.email)}" checked> ${esc(m.name)}</label>
-            <input type="number" name="weight" data-for="${esc(m.email)}" min="0.1" max="100" step="0.1" value="1" aria-label="${esc(t("bill.weight"))} — ${esc(m.name)}">
+            <span class="stepper">
+              <button type="button" class="step" data-step="-1" data-for="${esc(m.email)}" aria-label="${esc(t("bill.weightDown"))}" tabindex="-1">−</button>
+              <input type="number" name="weight" data-for="${esc(m.email)}" min="1" max="100" step="1" value="1" inputmode="numeric" aria-label="${esc(t("bill.weight"))} — ${esc(m.name)}">
+              <button type="button" class="step" data-step="1" data-for="${esc(m.email)}" aria-label="${esc(t("bill.weightUp"))}" tabindex="-1">+</button>
+            </span>
           </div>`).join("")}
         </fieldset>
         <label><span>${esc(t("bill.image"))}</span><input name="file" type="file" accept="image/*"></label>
@@ -435,6 +441,23 @@ async function viewGroup(id) {
         <div class="thumbs" id="pay-thumbs"></div>
         <div class="dialog-foot"><button class="btn btn-primary">${esc(t("payment.save"))}</button></div>
       </form>
+    </dialog>
+
+    <dialog id="quickpay-dialog" aria-labelledby="quickpay-title">
+      <div class="dialog-head"><h2 id="quickpay-title"></h2>
+        <button type="button" class="btn btn-quiet" data-close="quickpay-dialog">${esc(t("common.close"))}</button></div>
+      <div class="stack">
+        <div id="quickpay-qr"></div>
+        <div class="summary-total">
+          <span class="muted">${esc(t("detail.amount"))}</span>
+          <span class="amount num" id="quickpay-amount"></span>
+        </div>
+        <p class="muted">${esc(t("quickpay.hint"))}</p>
+        <div class="dialog-foot">
+          <button type="button" class="btn" data-close="quickpay-dialog">${esc(t("common.cancel"))}</button>
+          <button type="button" class="btn btn-primary" id="quickpay-done">${esc(t("quickpay.done"))}</button>
+        </div>
+      </div>
     </dialog>
 
     <dialog id="detail-dialog" aria-labelledby="detail-title">
@@ -465,17 +488,33 @@ async function viewGroup(id) {
   }
 
   const boxes = () => $$('input[name="participants"]', billForm);
-  const weightOf = (email) => Number($(`input[name="weight"][data-for="${CSS.escape(email)}"]`, billForm).value) || 1;
+
+  // Weights are whole numbers 1 to 100: 1 is an even share, 2 pays double. The stepper and the native
+  // arrow keys both move by one, and a typed value is clamped on the way out.
+  const clampWeight = (v) => Math.min(100, Math.max(1, Math.round(Number(v) || 1)));
+  const weightOf = (email) => clampWeight($(`input[name="weight"][data-for="${CSS.escape(email)}"]`, billForm).value);
 
   // A weight only means something for a checked person, so an unchecked row disables its field.
   function syncWeights() {
     for (const box of boxes()) {
       const field = $(`input[name="weight"][data-for="${CSS.escape(box.value)}"]`, billForm);
       field.disabled = !box.checked;
+      for (const step of $$(`.step[data-for="${CSS.escape(box.value)}"]`, billForm)) step.disabled = !box.checked;
       field.closest(".weight-row").style.opacity = box.checked ? "1" : "0.55";
     }
   }
   for (const box of boxes()) box.onchange = syncWeights;
+
+  billForm.addEventListener("click", (e) => {
+    const step = e.target.closest(".step");
+    if (!step) return;
+    const field = $(`input[name="weight"][data-for="${CSS.escape(step.dataset.for)}"]`, billForm);
+    field.value = String(clampWeight(Number(field.value) + Number(step.dataset.step)));
+  });
+  billForm.addEventListener("change", (e) => {
+    if (e.target.name !== "weight") return;
+    e.target.value = String(clampWeight(e.target.value));
+  });
 
   function setParticipants(values, weights) {
     for (const box of boxes()) {
@@ -646,10 +685,43 @@ async function viewGroup(id) {
     };
   }
 
+  // Quick pay: show the payee's QR, then record the transfer the transfer list already named.
+  // Cancel closes without a request; Done writes one payment and repaints from the server.
+  function openQuickPay(email, amount) {
+    const m = members.find((x) => x.email === email);
+    if (!m) return;
+    $("#quickpay-title").textContent = t("quickpay.title", { name: m.name });
+    $("#quickpay-amount").textContent = vnd(amount);
+    $("#quickpay-qr").innerHTML = m.qr
+      ? `<img src="${esc(m.qr)}" alt="" style="border-radius:var(--r-sm);border:1px solid var(--rule);margin-inline:auto;max-width:min(100%,280px)">`
+      : `<p class="muted">${esc(t("common.noQr"))}</p>`;
+    const done = $("#quickpay-done");
+    done.disabled = false;
+    done.textContent = t("quickpay.done");
+    done.onclick = async () => {
+      done.disabled = true;
+      done.textContent = t("quickpay.recording");
+      try {
+        await api(`/api/groups/${id}/payments`, {
+          method: "POST",
+          body: JSON.stringify({ id: newId(), from: me, to: email, amount }),
+        });
+        $("#quickpay-dialog").close();
+        await render();
+      } catch (err) {
+        done.disabled = false;
+        done.textContent = t("quickpay.done");
+        fail(err);
+      }
+    };
+    $("#quickpay-dialog").showModal();
+  }
+
   app.onclick = async (e) => {
-    const el = e.target.closest("[data-details-bill],[data-details-pay],[data-qr],[data-members],[data-new-bill],[data-new-pay],[data-remove],[data-edit-bill],[data-edit-pay],[data-del-bill],[data-del-pay]");
+    const el = e.target.closest("[data-details-bill],[data-details-pay],[data-qr],[data-quickpay],[data-members],[data-new-bill],[data-new-pay],[data-remove],[data-edit-bill],[data-edit-pay],[data-del-bill],[data-del-pay]");
     if (!el) return;
     const d = el.dataset;
+    if (d.quickpay) { openQuickPay(d.quickpay, Number(d.amount)); return; }
     try {
       if (d.detailsBill) {
         const b = bills.find((x) => x.id === d.detailsBill);
@@ -670,6 +742,7 @@ async function viewGroup(id) {
           `<span class="muted">${esc(dateTime(p.createdAt))}</span>`,
         ], p.image);
       } else if (d.qr) showQr(members.find((m) => m.email === d.qr));
+      else if (d.quickpay) openQuickPay(d.quickpay, Number(d.amount));
       else if (d.members) $("#members-dialog").showModal();
       else if (d.newBill) resetBill();
       else if (d.newPay) resetPay();

@@ -249,9 +249,25 @@ a.ledger-row:hover { background: var(--surface); }
 
 /* ---------- weights ---------- */
 .weights { display: grid; gap: var(--sp-2); padding: var(--sp-3); border: 1px solid var(--rule); border-radius: var(--r-sm); background: var(--paper); }
-.weight-row { display: grid; grid-template-columns: 1fr 88px; gap: var(--sp-3); align-items: center; font-size: var(--text-sm); }
-.weight-row { grid-template-columns: 1fr 72px; }
-.weight-row input { text-align: center; padding: 0 var(--sp-2); }
+.weight-row { display: grid; grid-template-columns: 1fr auto; gap: var(--sp-3); align-items: center; font-size: var(--text-sm); }
+
+/* a weight is a small whole number: two 32px targets either side beat the native spinner, which is
+   hover-only and too small to hit on a phone */
+.stepper { display: inline-grid; grid-template-columns: 32px 52px 32px; align-items: stretch; }
+.stepper .step {
+  display: flex; align-items: center; justify-content: center;
+  min-width: 32px; min-height: 38px; padding: 0;
+  border: 1px solid var(--field-edge); background: var(--surface); color: var(--ink);
+  font-size: var(--text-md); line-height: 1; cursor: pointer;
+  transition: background-color var(--dur-micro) var(--ease-out);
+}
+.stepper .step:first-child { border-radius: var(--r-field) 0 0 var(--r-field); border-right: 0; }
+.stepper .step:last-child { border-radius: 0 var(--r-field) var(--r-field) 0; border-left: 0; }
+.stepper .step:hover { background: var(--sunken); }
+.stepper .step:active { background: var(--rule); }
+.stepper .step[disabled] { opacity: 0.4; cursor: not-allowed; }
+.stepper input { width: 52px; text-align: center; padding: 0 var(--sp-1); border-radius: 0; -moz-appearance: textfield; appearance: textfield; }
+.stepper input::-webkit-outer-spin-button, .stepper input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .check { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--text-sm); font-weight: 400; color: var(--ink); }
 .check input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
 
