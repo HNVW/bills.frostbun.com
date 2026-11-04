@@ -235,14 +235,13 @@ function drawQr() {
 
 /* ---------- money ---------- */
 
-// The API's balance is payer-credit: positive means others owe you. On screen the direction is always a word
-// ("you pay" / "you get back") beside an unsigned amount, so nobody has to decode a sign.
+// The API's balance is payer-credit: positive means you are owed, negative means you owe. On screen the
+// direction is a word ("you pay" / "you get back") beside an unsigned amount, so the sign is never printed.
 const settledThreshold = 1000;
-const shownBalance = (balance) => -balance;
 
 function balanceChip(balance) {
   if (Math.abs(balance) < settledThreshold) return `<span class="chip">${esc(t("balance.settled"))}</span>`;
-  const owes = shownBalance(balance) < 0;
+  const owes = balance < 0;
   return `<span class="chip ${owes ? "owe" : "owed"}">${esc(t(owes ? "balance.owe" : "balance.owed"))} ${vnd(Math.abs(balance))}</span>`;
 }
 
@@ -345,11 +344,13 @@ async function viewGroup(id) {
       <div class="balances">
         ${summary.balances.map((b) => {
           const settled = Math.abs(b.balance) < settledThreshold;
-          const owes = shownBalance(b.balance) < 0;
+          const owes = b.balance < 0;
+          // your own row speaks in the second person; everyone else's in the third
+          const verb = b.email === me ? (owes ? "balance.owe" : "balance.owed") : (owes ? "balance.owes" : "balance.owedTo");
           return `<div class="balance-row">
           <button type="button" class="btn btn-quiet" style="justify-self:start;min-height:32px;padding:0" data-qr="${esc(b.email)}">${esc(b.name)}</button>
           <span class="row" style="justify-content:flex-end;gap:var(--sp-2)">
-            ${settled ? "" : `<span class="muted">${esc(t(owes ? "balance.owe" : "balance.owed"))}</span>`}
+            ${settled ? "" : `<span class="muted">${esc(t(verb))}</span>`}
             <span class="money ${settled ? "settled" : owes ? "owe" : "owed"}">${settled ? esc(t("balance.settled")) : vnd(Math.abs(b.balance))}</span>
           </span>
         </div>`; }).join("")}
@@ -731,27 +732,29 @@ async function viewGroup(id) {
 
 const SCHEME_LABEL = (id) => t("scheme." + id);
 
-// Swatches are the scheme's own tokens, read off a probe element once rather than hard-coded twice.
+// A scheme option previews itself: its paper, a mid tone, its ink and its signal, read off a probe element
+// once. Both the background AND the ink come from the option's own scheme, or a dark option would print
+// dark ink on dark paper whenever the current scheme is light.
 const schemeCache = new Map();
-function schemeStrip(id) {
+function schemeTokens(id) {
   if (!schemeCache.has(id)) {
     const probe = document.createElement("div");
     probe.dataset.scheme = id;
     probe.style.cssText = "position:absolute;visibility:hidden";
-    probe.innerHTML = "<i></i>";
     document.body.append(probe);
     const cs = getComputedStyle(probe);
-    const dot = getComputedStyle(probe.firstElementChild);
-    schemeCache.set(id, ["--paper", "--surface", "--sunken", "--owe"].map((k) => cs.getPropertyValue(k).trim() || "transparent"));
+    const read = (k) => cs.getPropertyValue(k).trim() || "transparent";
+    schemeCache.set(id, { paper: read("--paper"), swatches: ["--paper", "--sunken", "--ink", "--owe"].map(read), ink: read("--ink"), owe: read("--owe") });
     probe.remove();
   }
-  return schemeCache.get(id).map(esc);
+  return schemeCache.get(id);
 }
 
 function paintSettings() {
   $("#scheme-grid").innerHTML = SCHEMES.map((s) => `
-    <button type="button" class="scheme-opt" data-scheme-id="${s.id}" aria-pressed="${s.id === scheme}" style="background:${schemeStrip(s.id)[0]}">
-      <span class="swatches" aria-hidden="true">${schemeStrip(s.id).map((c) => `<span style="background:${c}"></span>`).join("")}</span>
+    <button type="button" class="scheme-opt" data-scheme-id="${s.id}" aria-pressed="${s.id === scheme}"
+      style="background:${schemeTokens(s.id).paper};color:${schemeTokens(s.id).ink};--opt-ink:${schemeTokens(s.id).ink}">
+      <span class="swatches" aria-hidden="true">${schemeTokens(s.id).swatches.map((c) => `<span style="background:${c}"></span>`).join("")}</span>
       <span>${esc(SCHEME_LABEL(s.id))}</span>
     </button>`).join("");
   $("#lang-list").innerHTML = LANGUAGES.map((l) => `

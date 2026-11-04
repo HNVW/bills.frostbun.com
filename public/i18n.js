@@ -28,6 +28,8 @@ export const DICTS = {
     "balance.settled": "settled",
     "balance.owe": "you pay",
     "balance.owed": "you get back",
+    "balance.owes": "owes",
+    "balance.owedTo": "is owed",
 
     "group.members": "Members ({count})",
     "group.rename": "Rename",
@@ -186,6 +188,8 @@ export const DICTS = {
     "balance.settled": "đã xong",
     "balance.owe": "bạn trả",
     "balance.owed": "bạn nhận lại",
+    "balance.owes": "còn nợ",
+    "balance.owedTo": "được nhận",
 
     "group.members": "Thành viên ({count})",
     "group.rename": "Đổi tên",
