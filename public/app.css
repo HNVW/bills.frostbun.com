@@ -237,9 +237,9 @@ a.ledger-row:hover { background: var(--surface); }
 .card--clickable:hover { border-color: var(--field-edge); background: var(--sunken); }
 .card-edit { color: var(--muted); flex-shrink: 0; }
 .card--clickable:hover .card-edit { color: var(--ink); }
-.card-actions { margin-top: var(--sp-2); }
+
 .card-meta { display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); color: var(--muted); font-size: var(--text-sm); }
-.card-actions { display: flex; gap: var(--sp-2); margin-top: var(--sp-3); }
+
 /* the two personal states, told by a 2px left edge only */
 .card--paid { box-shadow: inset 2px 0 0 var(--owed); }
 .card--involved { box-shadow: inset 2px 0 0 var(--owe); }
@@ -279,24 +279,27 @@ a.ledger-row:hover { background: var(--surface); }
 .check input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
 
 /* ---------- dialogs ---------- */
-/* A dialog is a column: the body scrolls, the footer stays put. Without this the actions of a tall
-   dialog (a bill form, a QR) scroll out of reach on a phone. Every dialog body carries .dialog-body. */
+/* The dialog itself scrolls and keeps its own padding, so every dialog works without opting into a
+   wrapper. The head and foot stick inside that scroll box, so a tall form or a 900px QR never pushes
+   Done out of reach. */
 dialog {
-  width: min(94vw, 560px); max-height: 88vh;
-  padding: 0; border: 1px solid var(--rule-strong); border-radius: var(--r-md);
+  width: min(94vw, 560px); max-height: 88vh; overflow-y: auto;
+  padding: var(--sp-5); border: 1px solid var(--rule-strong); border-radius: var(--r-md);
   background: var(--paper); color: var(--ink);
   box-shadow: var(--shadow-modal);
-  overflow: hidden;
 }
-dialog:not([open]) { padding: var(--sp-5); }
-dialog[open] { display: flex; flex-direction: column; }
-dialog form { display: flex; flex-direction: column; min-height: 0; }
-dialog .dialog-head { padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--rule); flex-shrink: 0; }
-dialog .dialog-body { padding: var(--sp-4) var(--sp-5); overflow-y: auto; min-height: 0; display: grid; gap: var(--sp-3); }
+dialog .dialog-head {
+  position: sticky; top: calc(var(--sp-5) * -1); z-index: 1;
+  margin: calc(var(--sp-5) * -1) calc(var(--sp-5) * -1) var(--sp-4);
+  padding: var(--sp-4) var(--sp-5);
+  background: var(--paper); border-bottom: 1px solid var(--rule);
+}
+dialog .dialog-body { display: grid; gap: var(--sp-3); }
 dialog .dialog-foot {
+  position: sticky; bottom: calc(var(--sp-5) * -1);
+  margin: var(--sp-4) calc(var(--sp-5) * -1) calc(var(--sp-5) * -1);
   padding: var(--sp-3) var(--sp-5) var(--sp-4);
-  border-top: 1px solid var(--rule);
-  background: var(--paper); flex-shrink: 0;
+  background: var(--paper); border-top: 1px solid var(--rule);
 }
 dialog::backdrop { background: var(--scrim); }
 .dialog-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-3); margin-bottom: var(--sp-4); }

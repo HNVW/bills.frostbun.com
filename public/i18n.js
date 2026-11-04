@@ -89,7 +89,6 @@ export const DICTS = {
     "detail.noImage": "No image.",
 
     "common.close": "Close",
-    "common.details": "Details",
     "common.edit": "Edit",
     "common.delete": "Delete",
     "common.save": "Save",
@@ -258,7 +257,6 @@ export const DICTS = {
     "detail.noImage": "Không có ảnh.",
 
     "common.close": "Đóng",
-    "common.details": "Chi tiết",
     "common.edit": "Sửa",
     "common.delete": "Xoá",
     "common.save": "Lưu",

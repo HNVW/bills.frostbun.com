@@ -621,7 +621,7 @@ async function viewGroup(id) {
     const involved = b.participants.includes(me);
     // green edge: you paid it (green wins when both apply); red edge: you are in but did not pay
     const accent = b.paidBy === me ? " card--paid" : involved ? " card--involved" : "";
-    return `<article class="card card--clickable${accent}" data-edit-bill="${b.id}">
+    return `<article class="card card--clickable${accent}" data-details-bill="${b.id}">
       <div class="card-head">
         <h3>${esc(b.title || t("detail.title"))}<button type="button" class="btn icon-btn card-edit" data-edit-bill="${b.id}" aria-label="${esc(t("common.edit"))}" title="${esc(t("common.edit"))}">${editIcon}</button></h3>
         <span class="money">${vnd(b.amount)}</span>
@@ -631,22 +631,16 @@ async function viewGroup(id) {
         <span>${esc(t("group.involved", { count: b.participants.length }))}</span>
         <span>${esc(date(b.createdAt))}</span>
       </div>
-      <div class="card-actions">
-        <button type="button" class="btn btn-quiet" data-details-bill="${b.id}">${esc(t("common.details"))}</button>
-      </div>
     </article>`;
   }
 
   function paymentCard(p) {
-    return `<article class="card card--clickable" data-edit-pay="${p.id}">
+    return `<article class="card card--clickable" data-details-pay="${p.id}">
       <div class="card-head">
         <h3>${esc(who(p.from))} → ${esc(who(p.to))}<button type="button" class="btn icon-btn card-edit" data-edit-pay="${p.id}" aria-label="${esc(t("common.edit"))}" title="${esc(t("common.edit"))}">${editIcon}</button></h3>
         <span class="money">${vnd(p.amount)}</span>
       </div>
       <div class="card-meta"><span>${esc(date(p.createdAt))}</span></div>
-      <div class="card-actions">
-        <button type="button" class="btn btn-quiet" data-details-pay="${p.id}">${esc(t("common.details"))}</button>
-      </div>
     </article>`;
   }
 
@@ -754,9 +748,9 @@ async function viewGroup(id) {
   }
 
   app.onclick = async (e) => {
-    // A card carries data-edit-* on the article and again on its pencil; the click must resolve to the
-    // innermost button so Details on a card opens the detail dialog, not the editor.
-    const el = e.target.closest("button, [data-edit-bill], [data-edit-pay]");
+    // The whole card opens Details; only the pencil beside the description opens the editor. The click
+    // resolves to the innermost matching element so a button inside a card wins over the card itself.
+    const el = e.target.closest("button, [data-details-bill], [data-details-pay], [data-edit-bill], [data-edit-pay]");
     if (!el) return;
     const d = el.dataset;
     // a card opened from the keyboard is a button-like target: Enter on the pencil already handles it
