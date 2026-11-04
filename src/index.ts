@@ -202,28 +202,28 @@ const groupOut = (g: Record<string, unknown>) => ({
 });
 
 const billOut = (b: Record<string, unknown>) => ({
-  id: b.id,
-  groupId: b.group_id,
-  title: b.title,
-  amount: b.amount,
-  paidBy: b.paid_by,
+  id: b.id as string,
+  groupId: b.group_id as string,
+  title: b.title as string,
+  amount: b.amount as number,
+  paidBy: b.paid_by as string,
   // weights is the only stored list: its keys are the participants, in declaration order.
   participants: Object.keys(parse<Record<string, number>>(b.weights as string, {})),
   weights: parse<Record<string, number> | null>(b.weights as string, null),
-  image: b.image ?? null,
-  createdBy: b.created_by,
-  createdAt: b.created_at,
+  image: (b.image ?? null) as string | null,
+  createdBy: b.created_by as string,
+  createdAt: b.created_at as string,
 });
 
 const paymentOut = (p: Record<string, unknown>) => ({
-  id: p.id,
-  groupId: p.group_id,
-  from: p.from_email,
-  to: p.to_email,
-  amount: p.amount,
-  image: p.image ?? null,
-  createdBy: p.created_by,
-  createdAt: p.created_at,
+  id: p.id as string,
+  groupId: p.group_id as string,
+  from: p.from_email as string,
+  to: p.to_email as string,
+  amount: p.amount as number,
+  image: (p.image ?? null) as string | null,
+  createdBy: p.created_by as string,
+  createdAt: p.created_at as string,
 });
 
 function parseAmount(v: unknown): number | null {
@@ -454,13 +454,17 @@ on("DELETE", "/api/groups/:id/members/:member", async ({ env, email, p }) => {
 
 // --- bills ---
 
-on("GET", "/api/groups/:id/bills", async ({ env, email, p }) => {
-  const [id] = p;
-  if (!(await isMember(env, id, email))) return error("forbidden", 403);
+async function billsOf(env: Env, id: string) {
   const { results } = await env.DB.prepare("SELECT * FROM bills WHERE group_id = ? ORDER BY created_at DESC, rowid DESC")
     .bind(id)
     .all<Record<string, unknown>>();
-  return json(results.map(billOut));
+  return results.map(billOut);
+}
+
+on("GET", "/api/groups/:id/bills", async ({ env, email, p }) => {
+  const [id] = p;
+  if (!(await isMember(env, id, email))) return error("forbidden", 403);
+  return json(await billsOf(env, id));
 });
 
 on("POST", "/api/groups/:id/bills", async ({ req, env, email, p, ctx }) => {
@@ -543,13 +547,17 @@ on("DELETE", "/api/groups/:id/bills/:bill", async ({ env, email, p }) => {
 
 // --- payments ---
 
-on("GET", "/api/groups/:id/payments", async ({ env, email, p }) => {
-  const [id] = p;
-  if (!(await isMember(env, id, email))) return error("forbidden", 403);
+async function paymentsOf(env: Env, id: string) {
   const { results } = await env.DB.prepare("SELECT * FROM payments WHERE group_id = ? ORDER BY created_at DESC, rowid DESC")
     .bind(id)
     .all<Record<string, unknown>>();
-  return json(results.map(paymentOut));
+  return results.map(paymentOut);
+}
+
+on("GET", "/api/groups/:id/payments", async ({ env, email, p }) => {
+  const [id] = p;
+  if (!(await isMember(env, id, email))) return error("forbidden", 403);
+  return json(await paymentsOf(env, id));
 });
 
 on("POST", "/api/groups/:id/payments", async ({ req, env, email, p }) => {
@@ -617,32 +625,30 @@ on("DELETE", "/api/groups/:id/payments/:payment", async ({ env, email, p }) => {
 
 // --- summary ---
 
-on("GET", "/api/groups/:id/summary", async ({ env, email, p }) => {
-  const [id] = p;
-  if (!(await isMember(env, id, email))) return error("forbidden", 403);
-  const members = await membersOf(env, id);
+// Balances are derived from the same rows the lists show. One group load needs the group, its bills, its
+// payments and this; computing it from already-fetched rows keeps a single round trip possible.
+async function summaryOf(
+  env: Env,
+  members: { email: string; name: string }[],
+  bills: { amount: number; paidBy: string; weights: Record<string, number> | null }[],
+  payments: { amount: number; from: string; to: string }[],
+) {
   const nameOf = new Map(members.map((m) => [m.email, m.name]));
-  const { results: bills } = await env.DB.prepare("SELECT amount, paid_by, weights FROM bills WHERE group_id = ?")
-    .bind(id)
-    .all<{ amount: number; paid_by: string; weights: string | null }>();
-  const { results: payments } = await env.DB.prepare("SELECT amount, from_email, to_email FROM payments WHERE group_id = ?")
-    .bind(id)
-    .all<{ amount: number; from_email: string; to_email: string }>();
 
   const balances = new Map<string, number>(members.map((m) => [m.email, 0]));
   let totalSpent = 0;
   for (const b of bills) {
     totalSpent += b.amount;
-    const weights = parse<Record<string, number>>(b.weights, {});
-    if (!Object.keys(weights).length) continue;
-    balances.set(b.paid_by, (balances.get(b.paid_by) ?? 0) + b.amount);
+    const weights = b.weights;
+    if (!weights || !Object.keys(weights).length) continue;
+    balances.set(b.paidBy, (balances.get(b.paidBy) ?? 0) + b.amount);
     for (const [person, share] of split(b.amount, weights)) {
       balances.set(person, (balances.get(person) ?? 0) - share);
     }
   }
   for (const p of payments) {
-    balances.set(p.from_email, (balances.get(p.from_email) ?? 0) + p.amount);
-    balances.set(p.to_email, (balances.get(p.to_email) ?? 0) - p.amount);
+    balances.set(p.from, (balances.get(p.from) ?? 0) + p.amount);
+    balances.set(p.to, (balances.get(p.to) ?? 0) - p.amount);
   }
 
   const debtors = [...balances].filter(([, v]) => v < 0).map(([who, v]) => ({ who, v: -v })).sort((a, b) => b.v - a.v);
@@ -657,11 +663,40 @@ on("GET", "/api/groups/:id/summary", async ({ env, email, p }) => {
     if (!creditors[j].v) j++;
   }
 
-  return json({
+  return {
     totalSpent,
     balances: [...balances].map(([m, v]) => ({ email: m, name: nameOf.get(m) ?? m, balance: v })),
     settlements: settlements.map((t) => ({ ...t, fromName: nameOf.get(t.from) ?? t.from, toName: nameOf.get(t.to) ?? t.to })),
+  };
+}
+
+// One round trip for the whole group screen: the group, both lists and the derived balances. The client
+// used to fire four requests per render and again after every edit; this is the same data in one.
+on("GET", "/api/groups/:id/view", async ({ req, env, email, p }) => {
+  const [id] = p;
+  if (!(await isMember(env, id, email))) return error("forbidden", 403);
+  await ensureUserName(env, req, email);
+  const g = await env.DB.prepare("SELECT * FROM groups WHERE id = ?").bind(id).first<Record<string, unknown>>();
+  if (!g) return error("not found", 404);
+  const members = await membersOf(env, id);
+  const [bills, payments] = [await billsOf(env, id), await paymentsOf(env, id)];
+  return json({
+    ...groupOut(g),
+    inviteToken: g.invite_token,
+    members,
+    me: email,
+    myName: (await displayName(env, email)),
+    bills,
+    payments,
+    summary: await summaryOf(env, members, bills, payments),
   });
+});
+
+on("GET", "/api/groups/:id/summary", async ({ env, email, p }) => {
+  const [id] = p;
+  if (!(await isMember(env, id, email))) return error("forbidden", 403);
+  const members = await membersOf(env, id);
+  return json(await summaryOf(env, members, await billsOf(env, id), await paymentsOf(env, id)));
 });
 
 // --- images ---

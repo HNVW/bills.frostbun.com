@@ -97,6 +97,7 @@ needs no prior membership — it is how you join.
 | `GET /api/groups?q=&limit=&offset=` | your groups with `myBalance`, newest activity first (last bill/payment, else creation); `q` matches the name; defaults `limit=5` |
 | `POST /api/groups` | create a group |
 | `GET /api/groups/:id` | group, members, `inviteToken` |
+| `GET /api/groups/:id/view` | the group screen in one round trip: group, `inviteToken`, members, bills, payments, summary |
 | `PATCH /api/groups/:id` | rename (any member) |
 | `DELETE /api/groups/:id` | delete with all data (creator) |
 | `POST /api/groups/:id/invite` | rotate invite token (member) |
@@ -136,7 +137,7 @@ image vanished).
 - Invites: each group has an `invite_token`; the members dialog shows `/<host>/join/<token>` plus Copy and Rotate.
   `POST /api/join/:token` adds the signed-in caller and returns the group (idempotent; rotating invalidates the old token).
 - Membership is the whole permission model: any member can create, edit and delete any bill or payment, rename the
-  group, invite or remove members, and delete the whole group. There is no owner role — `created_by` is recorded for
+  group, invite or remove members (each row in the members dialog has a Remove button), and delete the whole group. There is no owner role — `created_by` is recorded for
   provenance only. The app is built for a trusted group of friends; the boundary is membership, not authorship.
 - R2 layout: `qrs/<email>`, `bills/<group-id>/<bill-id>`, `payments/<group-id>/<payment-id>`. One object per entry at
   a key derived entirely from the entry (`entryKey`, `qrKey`) — no extra random component, no extension.

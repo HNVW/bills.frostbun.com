@@ -328,6 +328,15 @@ dialog::backdrop { background: var(--scrim); }
 .dialog-foot > .btn-danger { margin-right: auto; }
 .title-row { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
 .title-row h1 { overflow: hidden; text-overflow: ellipsis; }
+.member-list { list-style: none; padding: 0; margin: 0 0 var(--sp-4); }
+.member-list li {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3);
+  padding: var(--sp-2) 0; border-bottom: 1px solid var(--rule);
+}
+.member-list li:last-child { border-bottom: 0; }
+.member-name { min-width: 0; overflow-wrap: anywhere; }
+.member-remove { flex-shrink: 0; }
+
 .danger-zone { display: grid; gap: var(--sp-2); justify-items: start; margin-top: var(--sp-6); padding-top: var(--sp-4); border-top: 1px solid var(--rule); }
 .fieldset { border: 1px solid var(--rule); border-radius: var(--r-sm); padding: var(--sp-3); margin: 0; display: grid; gap: var(--sp-2); }
 .fieldset > legend { padding: 0 var(--sp-2); font-size: var(--text-sm); font-weight: 500; color: var(--ink-2); }

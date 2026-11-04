@@ -316,12 +316,11 @@ async function viewGroups() {
 async function viewGroup(id) {
   app.innerHTML = `<div class="stack" aria-busy="true">
     <div class="skeleton" style="width:40%"></div><div class="skeleton" style="width:70%"></div><div class="skeleton"></div></div>`;
-  const [group, bills, payments, summary] = await Promise.all([
-    api(`/api/groups/${id}`),
-    api(`/api/groups/${id}/bills`),
-    api(`/api/groups/${id}/payments`),
-    api(`/api/groups/${id}/summary`),
-  ]);
+  // One request carries the group, both lists and the balances, so an edit costs one round trip.
+  const data = await api(`/api/groups/${id}/view`);
+  const group = data;
+  const { bills, payments, summary } = data;
+  if (data.myName) { meName = data.myName; $("#me").textContent = data.myName; }
   const members = group.members;
   const me = group.me;
   const nameOf = new Map(members.map((m) => [m.email, m.name]));
@@ -406,7 +405,11 @@ async function viewGroup(id) {
     <dialog id="members-dialog" aria-labelledby="members-title">
       <div class="dialog-head"><h2 id="members-title">${esc(t("members.title"))}</h2>
         <button type="button" class="btn btn-quiet" data-close="members-dialog">${esc(t("common.close"))}</button></div>
-      <ul class="stack" style="list-style:none;padding:0;margin:0 0 var(--sp-4)">${members.map((m) => `<li>${esc(m.name)}${m.name === m.email ? "" : ` <span class="muted">${esc(m.email)}</span>`}</li>`).join("")}</ul>
+      <ul class="member-list">${members.map((m) => `<li>
+        <span class="member-name">${esc(m.name)}${m.name === m.email ? "" : ` <span class="muted">${esc(m.email)}</span>`}${m.email === me ? ` <span class="chip">${esc(t("members.you"))}</span>` : ""}</span>
+        ${m.email === me ? "" : `<button type="button" class="btn btn-quiet btn-danger member-remove" data-remove-member="${esc(m.email)}"
+          aria-label="${esc(t("members.remove", { name: m.name }))}" title="${esc(t("members.remove", { name: m.name }))}">${esc(t("members.removeShort"))}</button>`}
+      </li>`).join("")}</ul>
       <div class="stack">
         <label><span>${esc(t("members.inviteLink"))}</span><input id="invite-link" readonly value="${esc(location.origin + "/join/" + group.inviteToken)}"></label>
         <div class="row"><button type="button" class="btn" id="copy-invite">${esc(t("members.copy"))}</button>
@@ -762,6 +765,12 @@ async function viewGroup(id) {
     // a card opened from the keyboard is a button-like target: Enter on the pencil already handles it
     if (d.quickpay) { openQuickPay(d.quickpay, d.payee, Number(d.amount)); return; }
     if (d.members) return $("#members-dialog").showModal();
+    if (d.removeMember) {
+      if (!confirm(t("members.removeConfirm", { name: d.removeMember }))) return;
+      await api(`/api/groups/${id}/members/${encodeURIComponent(d.removeMember)}`, { method: "DELETE" });
+      await render();
+      return;
+    }
     if (d.newBill) return resetBill();
     if (d.newPay) return resetPay();
     if (d.editBill) return editBill(bills.find((b) => b.id === d.editBill));
@@ -832,9 +841,10 @@ async function viewGroup(id) {
     const name = e.target.elements.name.value.trim();
     if (!name) return;
     try {
-      await api(`/api/groups/${id}`, { method: "PATCH", body: JSON.stringify({ name }) });
+      const { name: saved } = await api(`/api/groups/${id}`, { method: "PATCH", body: JSON.stringify({ name }) });
       $("#rename-dialog").close();
-      await render();
+      group.name = saved;
+      $("#gname").textContent = saved;
     } catch (err) { fail(err); }
   };
 
@@ -1008,9 +1018,7 @@ async function render() {
   const join = /^\/join\/([0-9a-fA-F-]{36})\/?$/.exec(location.pathname);
   if (join) { bindNav(); return joinGroup(join[1]); }
   const m = /^\/([0-9a-f-]{36})\/?$/.exec(location.pathname);
-  api("/api/me")
-    .then((me) => { meName = me.name; $("#me").textContent = me.name; })
-    .catch(() => {});
+  if (!meName) api("/api/me").then((me) => { meName = me.name; $("#me").textContent = me.name; }).catch(() => {});
   bindNav();
   app.innerHTML = `<div class="stack" aria-busy="true"><div class="skeleton" style="width:45%"></div><div class="skeleton" style="width:75%"></div></div>`;
   try {
