@@ -1,18 +1,28 @@
-// Push notifications, a failed-navigation fallback, and the PWA manifest.
+// Push notifications, a failed-navigation fallback, and a precache of the three PWA files.
 //
-// The manifest is answered from this file, not from the network.
+// Why those three are precached: Chrome fetches a <link rel="manifest"> target without credentials.
+// Behind Cloudflare Access that request is answered with a 302 to the login origin, and Chrome refuses
+// to parse a manifest that arrived cross-origin — the installer reports "No manifest detected" and the
+// install prompt disappears. Serving it from Cache Storage means the request never reaches Access.
 //
-// Why: Chrome fetches a <link rel="manifest"> target without credentials. Behind Cloudflare Access that
-// request is answered with a 302 to the login origin, and Chrome refuses to parse a manifest that arrived
-// cross-origin — the installer reports "No manifest detected" and the install prompt disappears.
-// Responding from the worker means the request never reaches Access.
-// The app itself is still uncached: every screen needs /api/*, so a cached shell could only be empty.
-//
-// The manifest body is embedded here rather than precached: a precache would have to fetch it at install
-// time, which is the very request that fails. Keep it in sync with public/manifest.webmanifest.
-const MANIFEST = "{\n  \"name\": \"Ho\u00e1 \u0111\u01a1n chung\",\n  \"short_name\": \"Ho\u00e1 \u0111\u01a1n\",\n  \"description\": \"Chia ho\u00e1 \u0111\u01a1n v\u00e0 thanh to\u00e1n v\u1edbi b\u1ea1n b\u00e8\",\n  \"lang\": \"vi\",\n  \"start_url\": \"/\",\n  \"scope\": \"/\",\n  \"display\": \"standalone\",\n  \"background_color\": \"#f9f6f2\",\n  \"theme_color\": \"#f9f6f2\",\n  \"icons\": [\n    { \"src\": \"/icon-192.png\", \"sizes\": \"192x192\", \"type\": \"image/png\", \"purpose\": \"any\" },\n    { \"src\": \"/icon-512.png\", \"sizes\": \"512x512\", \"type\": \"image/png\", \"purpose\": \"any\" },\n    { \"src\": \"/icon-512.png\", \"sizes\": \"512x512\", \"type\": \"image/png\", \"purpose\": \"maskable\" }\n  ]\n}";
+// Only the manifest and icons are cached. The app itself is not: every screen needs /api/*, so a cached
+// shell could only render an empty page, and caching it is what forced a hand-bumped version string on
+// every deploy. Bump CACHE when the manifest or the icons change.
+const CACHE = "bills-meta-v1";
+const META = ["/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
-self.addEventListener("install", () => self.skipWaiting());
+self.addEventListener("install", (event) => {
+  // One put at a time: addAll rejects the whole batch on a single failure, and a rejected install means
+  // no worker ever activates. A missing icon should cost that icon, not the worker.
+  event.waitUntil(
+    caches.open(CACHE)
+      .then((c) => Promise.all(META.map((u) => fetch(u).then((r) => (r.ok ? c.put(u, r) : null)).catch(() => null))))
+      .then(() => self.skipWaiting()),
+  );
+});
+
+// Old caches are left alone. Bumping CACHE opens a fresh one, and the previous bills-meta-* entries stay
+// behind harmlessly; deleting by prefix is the part that once risked touching other Cache Storage.
 self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));
 
 // The offline page is carried in this file rather than cached, so there is nothing to invalidate and
@@ -57,9 +67,9 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
   if (url.origin !== location.origin) return;
 
-  // The manifest must not depend on the network answering: see the note above.
-  if (url.pathname === "/manifest.webmanifest") {
-    event.respondWith(new Response(MANIFEST, { headers: { "content-type": "application/manifest+json" } }));
+  // The manifest and icons must not depend on the network answering: see the note at the top.
+  if (META.includes(url.pathname)) {
+    event.respondWith(caches.match(request).then((hit) => hit || fetch(request).catch(() => new Response("", { status: 504 }))));
     return;
   }
 

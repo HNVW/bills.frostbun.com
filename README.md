@@ -83,15 +83,15 @@ needs `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in the org secrets).
 - Notifications: browser Web Push (VAPID). The nav bell toggles this browser's subscription; adding a bill pushes to
   every involved member except the person who added it. Secrets `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`
   must be set on the Worker (`wrangler secret put`); with them absent, push is silently skipped.
-- `/manifest.webmanifest`, `/sw.js`, `/icon-{192,512}.png` — installable PWA. The service worker answers
-  `/manifest.webmanifest` **itself**, from a copy embedded in `sw.js`, and that is an installability requirement
-  rather than an offline nicety: Chrome fetches a manifest link without credentials, so behind Cloudflare Access the
-  request is answered with a 302 to the login origin, and Chrome refuses to parse a cross-origin manifest — the
-  installer then reports "No manifest detected". Responding from the worker means Access never sees the request. The
-  embedded copy and `public/manifest.webmanifest` must be kept in sync.
+- `/manifest.webmanifest`, `/sw.js`, `/icon-{192,512}.png` — installable PWA. The service worker precaches exactly
+  those three files and serves them cache-first, which is an installability requirement rather than an offline
+  nicety: Chrome fetches a manifest link without credentials, so behind Cloudflare Access the request is answered
+  with a 302 to the login origin, and Chrome refuses to parse a cross-origin manifest — the installer then reports
+  "No manifest detected". The precache fetch runs inside the worker, so it carries the session cookie and succeeds.
+  Bump `CACHE` in `sw.js` when the manifest or icons change; old caches are left behind rather than deleted.
 - The service worker does **not** cache the app: every screen needs `/api/*`, so a cached shell could only render an
   empty page. Its other fetch job is a failed navigation, which gets a self-contained "no connection" page carried as a
-  string in `sw.js`. Push notifications are unaffected. On activate it deletes other `bills-*` caches.
+  string in `sw.js`. Push notifications are unaffected.
 - `/img/<key>` — an entry image or a person's QR, readable by group members (QR: anyone sharing a group).
 
 Every `/api/*` route requires the Access identity (`401` otherwise). The only difference is that `/api/join/:token`
