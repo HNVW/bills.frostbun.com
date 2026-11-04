@@ -115,15 +115,17 @@ needs no prior membership — it is how you join.
 
 Limits: group and display names 1–80 and 1–60 chars, bill title 200 chars (truncated), at least one involved member,
 one image per entry, 8 MB per image, `limit` capped at 50. Amounts are positive integers in đồng; the form groups
-digits per locale (`100.000` in vi, `100,000` in en) and sends the bare number. A bill may carry `weights`, an object
-of participant email to weight (above 0, at most 100, default 1): a person of weight 2 pays twice the share of weight 1. Errors are `{error}` with `400` (invalid input),
+digits per locale (`100.000` in vi, `100,000` in en) and sends the bare number. A bill carries `weights`, an object of
+participant email to weight (above 0, at most 100): a person of weight 2 pays twice the share of weight 1. Its keys
+*are* the participants, in split order — there is no separate list to keep in sync. An absent map means the payer
+alone at weight 1. Errors are `{error}` with `400` (invalid input),
 `401` (no Access identity), `403` (not a member / not the creator), `404`, or `409` (entry id already used, referenced
 image vanished).
 
 ## Data
 
 - `groups(id, name, created_by, invite_token, created_at)`, `members(group_id, email, created_at)`,
-  `bills(amount VND integer, paid_by, participants JSON, weights JSON, image)`, `payments(from, to, amount, image)`,
+  `bills(amount VND integer, paid_by, weights JSON, image)`, `payments(from, to, amount, image)`,
   `users(email, name, qr)`, `push_subscriptions(endpoint, email, p256dh, auth)`.
 - `users(email, name)` is the display name, `users.qr` the optional payment-QR key. Default is the Access identity name, fetched once from
   `/cdn-cgi/access/get-identity` (the app JWT has no name claim) and stored; an email-valued row is re-defaulted on the
@@ -166,4 +168,5 @@ image vanished).
   the heaviest weights, then declaration order, so the shares sum to the amount) from each participant; payments shift
   balances; greedy min-cash-flow produces the transfer list.
 - Weights: the bill form shows a number field per member beside its checkbox, disabled when the member is unchecked.
-  Stored as a JSON object in `bills.weights`; an absent or missing key means 1, so an existing row needs no backfill.
+  `bills.weights` is the only stored list of involved people; `participants` in the API response is derived from its
+  keys, so a bill with no participants and a bill with an empty weights map are the same rejected state.

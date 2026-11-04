@@ -26,8 +26,9 @@ const parse = <T,>(s: string | null | undefined, fallback: T): T => {
 
 // VND has no subunit. A participant's share is `amount * weight / total weight`, floored; the leftover
 // đồng go one each to the heaviest weights, then in declaration order, so the shares always sum to amount.
-export function split(amount: number, participants: string[], weights?: Record<string, number>) {
-  const ws = participants.map((p) => weights?.[p] ?? 1);
+export function split(amount: number, weights: Record<string, number>) {
+  const participants = Object.keys(weights);
+  const ws = participants.map((p) => weights[p]);
   const total = ws.reduce((a, b) => a + b, 0);
   if (!total) return participants.map((p) => [p, 0] as const);
   const shares = ws.map((w) => Math.floor((amount * w) / total));
@@ -169,10 +170,10 @@ async function balancesOf(env: Env, groupIds: string[], email: string) {
   if (!groupIds.length) return out;
   const ph = groupIds.map(() => "?").join(",");
   const { results: bills } = await env.DB.prepare(
-    `SELECT group_id, amount, paid_by, participants, weights FROM bills WHERE group_id IN (${ph})`,
+    `SELECT group_id, amount, paid_by, weights FROM bills WHERE group_id IN (${ph})`,
   )
     .bind(...groupIds)
-    .all<{ group_id: string; amount: number; paid_by: string; participants: string; weights: string | null }>();
+    .all<{ group_id: string; amount: number; paid_by: string; weights: string | null }>();
   const { results: pays } = await env.DB.prepare(
     `SELECT group_id, amount, from_email, to_email FROM payments WHERE group_id IN (${ph})`,
   )
@@ -181,8 +182,8 @@ async function balancesOf(env: Env, groupIds: string[], email: string) {
 
   for (const b of bills) {
     if (b.paid_by === email) out.set(b.group_id, (out.get(b.group_id) ?? 0) + b.amount);
-    const participants = parse(b.participants, []);
-    const mine = participants.length ? split(b.amount, participants, parse(b.weights, undefined)).find(([p]) => p === email) : undefined;
+    const weights = parse<Record<string, number>>(b.weights, {});
+    const mine = Object.keys(weights).length ? split(b.amount, weights).find(([p]) => p === email) : undefined;
     if (mine) out.set(b.group_id, (out.get(b.group_id) ?? 0) - mine[1]);
   }
   for (const p of pays) {
@@ -206,7 +207,8 @@ const billOut = (b: Record<string, unknown>) => ({
   title: b.title,
   amount: b.amount,
   paidBy: b.paid_by,
-  participants: parse(b.participants as string, []),
+  // weights is the only stored list: its keys are the participants, in declaration order.
+  participants: Object.keys(parse<Record<string, number>>(b.weights as string, {})),
   weights: parse<Record<string, number> | null>(b.weights as string, null),
   image: b.image ?? null,
   createdBy: b.created_by,
@@ -229,29 +231,22 @@ function parseAmount(v: unknown): number | null {
   return typeof n === "number" && Number.isSafeInteger(n) && n > 0 ? n : null;
 }
 
-function parseParticipants(v: unknown, allowed: Set<string>, fallback: string): string[] | string {
-  if (v !== undefined && v !== null && !Array.isArray(v)) return "participants must be an array";
-  const raw = Array.isArray(v) && v.length ? v : [fallback];
-  const out = [...new Set(raw.map(normEmail).filter(Boolean))];
-  if (!out.length) return "participants required";
-  for (const p of out) if (!allowed.has(p)) return `not a member of this group: ${p}`;
-  return out;
-}
-
-// String keys (`{"a@b.c": 2}`) so JSON stays decimal-safe; an absent list means everyone weighs 1.
+// A bill's involved people and their shares are one thing: `weights` maps email -> weight, and its keys
+// are the participants. String keys keep JSON decimal-safe. An absent map means the fallback person at 1.
 const MAX_WEIGHT = 100;
 
-function parseWeights(v: unknown, participants: string[]): Record<string, number> | string {
-  if (v === undefined || v === null) return Object.fromEntries(participants.map((p) => [p, 1]));
+function parseWeights(v: unknown, allowed: Set<string>, fallback: string): Record<string, number> | string {
+  if (v === undefined || v === null) return { [fallback]: 1 };
   if (typeof v !== "object" || Array.isArray(v)) return "weights must be an object";
   const out: Record<string, number> = {};
   for (const [raw, w] of Object.entries(v as Record<string, unknown>)) {
     const email = normEmail(raw);
-    if (!participants.includes(email)) continue;
+    if (!email) continue;
+    if (!allowed.has(email)) return `not a member of this group: ${email}`;
     if (typeof w !== "number" || !Number.isFinite(w) || w <= 0 || w > MAX_WEIGHT) return `weight for ${email} must be above 0 and at most ${MAX_WEIGHT}`;
     out[email] = w;
   }
-  for (const p of participants) out[p] ??= 1;
+  if (!Object.keys(out).length) return "participants required";
   return out;
 }
 
@@ -483,9 +478,7 @@ on("POST", "/api/groups/:id/bills", async ({ req, env, email, p, ctx }) => {
   const allowed = new Set((await membersOf(env, id)).map((m) => m.email));
   const paidBy = normEmail(body.paidBy) || email;
   if (!allowed.has(paidBy)) return error("paidBy must be a member of this group");
-  const participants = parseParticipants(body.participants, allowed, paidBy);
-  if (typeof participants === "string") return error(participants);
-  const weights = parseWeights(body.weights, participants);
+  const weights = parseWeights(body.weights, allowed, paidBy);
   if (typeof weights === "string") return error(weights);
   const title = typeof body.title === "string" ? body.title.trim().slice(0, 200) : "";
   // The client mints the id so it can upload the image before the row exists; reject a live id instead of
@@ -498,7 +491,6 @@ on("POST", "/api/groups/:id/bills", async ({ req, env, email, p, ctx }) => {
     title,
     amount,
     paidBy,
-    participants,
     weights,
     createdAt: new Date().toISOString(),
     createdBy: email,
@@ -506,12 +498,12 @@ on("POST", "/api/groups/:id/bills", async ({ req, env, email, p, ctx }) => {
   const image = pickImage(body.image, entryKey("bills", id, bill.id));
   if (image && !(await env.IMAGES.head(image))) return error("image no longer exists", 409);
   await env.DB.prepare(
-    "INSERT INTO bills (id, group_id, title, amount, paid_by, participants, weights, image, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO bills (id, group_id, title, amount, paid_by, weights, image, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
   )
-    .bind(bill.id, id, bill.title, bill.amount, bill.paidBy, JSON.stringify(participants), JSON.stringify(weights), image, email, bill.createdAt)
+    .bind(bill.id, id, bill.title, bill.amount, bill.paidBy, JSON.stringify(weights), image, email, bill.createdAt)
     .run();
-  ctx.waitUntil(notifyBillCreated(env, id, email, bill).catch(() => undefined));
-  return json({ ...bill, image }, 201);
+  ctx.waitUntil(notifyBillCreated(env, id, email, { ...bill, participants: Object.keys(weights) }).catch(() => undefined));
+  return json({ ...bill, participants: Object.keys(weights), image }, 201);
 });
 
 on("PATCH", "/api/groups/:id/bills/:bill", async ({ req, env, email, p }) => {
@@ -528,20 +520,18 @@ on("PATCH", "/api/groups/:id/bills/:bill", async ({ req, env, email, p }) => {
   const allowed = new Set((await membersOf(env, id)).map((m) => m.email));
   const paidBy = body.paidBy === undefined ? current.paidBy : normEmail(body.paidBy);
   if (!allowed.has(paidBy as string)) return error("paidBy must be a member of this group");
-  const participants = parseParticipants(body.participants ?? current.participants, allowed, paidBy as string);
-  if (typeof participants === "string") return error(participants);
-  const prev = body.weights === undefined ? (current.weights ?? null) : body.weights;
-  const weights = parseWeights(prev, participants);
+  const prev = body.weights ?? current.weights ?? null;
+  const weights = parseWeights(prev, allowed, paidBy as string);
   if (typeof weights === "string") return error(weights);
   const title = body.title === undefined ? current.title : typeof body.title === "string" ? body.title.trim().slice(0, 200) : current.title;
   const before = (current.image as string | null) ?? null;
   const image = body.image === undefined ? before : pickImage(body.image, entryKey("bills", id, billId));
   if (image && image !== before && !(await env.IMAGES.head(image))) return error("image no longer exists", 409);
-  await env.DB.prepare("UPDATE bills SET title = ?, amount = ?, paid_by = ?, participants = ?, weights = ?, image = ? WHERE id = ? AND group_id = ?")
-    .bind(title, amount, paidBy, JSON.stringify(participants), JSON.stringify(weights), image, billId, id)
+  await env.DB.prepare("UPDATE bills SET title = ?, amount = ?, paid_by = ?, weights = ?, image = ? WHERE id = ? AND group_id = ?")
+    .bind(title, amount, paidBy, JSON.stringify(weights), image, billId, id)
     .run();
   if (before && before !== image) await deleteImages(env, [before]);
-  return json({ ...current, title, amount, paidBy, participants, weights, image });
+  return json({ ...current, title, amount, paidBy, participants: Object.keys(weights), weights, image });
 });
 
 on("DELETE", "/api/groups/:id/bills/:bill", async ({ env, email, p }) => {
@@ -638,9 +628,9 @@ on("GET", "/api/groups/:id/summary", async ({ env, email, p }) => {
   if (!(await isMember(env, id, email))) return error("forbidden", 403);
   const members = await membersOf(env, id);
   const nameOf = new Map(members.map((m) => [m.email, m.name]));
-  const { results: bills } = await env.DB.prepare("SELECT amount, paid_by, participants, weights FROM bills WHERE group_id = ?")
+  const { results: bills } = await env.DB.prepare("SELECT amount, paid_by, weights FROM bills WHERE group_id = ?")
     .bind(id)
-    .all<{ amount: number; paid_by: string; participants: string; weights: string | null }>();
+    .all<{ amount: number; paid_by: string; weights: string | null }>();
   const { results: payments } = await env.DB.prepare("SELECT amount, from_email, to_email FROM payments WHERE group_id = ?")
     .bind(id)
     .all<{ amount: number; from_email: string; to_email: string }>();
@@ -649,10 +639,10 @@ on("GET", "/api/groups/:id/summary", async ({ env, email, p }) => {
   let totalSpent = 0;
   for (const b of bills) {
     totalSpent += b.amount;
-    const participants = parse(b.participants, []);
-    if (!participants.length) continue;
+    const weights = parse<Record<string, number>>(b.weights, {});
+    if (!Object.keys(weights).length) continue;
     balances.set(b.paid_by, (balances.get(b.paid_by) ?? 0) + b.amount);
-    for (const [person, share] of split(b.amount, participants, parse(b.weights, undefined))) {
+    for (const [person, share] of split(b.amount, weights)) {
       balances.set(person, (balances.get(person) ?? 0) - share);
     }
   }

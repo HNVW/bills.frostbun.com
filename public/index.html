@@ -578,7 +578,6 @@ async function viewGroup(id) {
         title: f.elements.title.value,
         amount: amountValue(f.elements.amount),
         paidBy: f.elements.paidBy.value,
-        participants: picked,
         weights: Object.fromEntries(picked.map((p) => [p, weightOf(p)])),
         image,
       };
