@@ -3,11 +3,13 @@
 
 self.addEventListener("install", () => self.skipWaiting());
 
-// Older versions cached the shell under bills-vN. Drop whatever is there so no browser keeps serving
-// a stale page after this worker takes over.
+// Older versions of this worker cached the shell under bills-vN. Drop only those: deleting every key
+// would take out any other Cache Storage the origin owns.
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then((keys) => Promise.all(keys.map((k) => caches.delete(k)))).then(() => self.clients.claim()),
+    caches.keys()
+      .then((keys) => Promise.all(keys.filter((k) => k.startsWith("bills-")).map((k) => caches.delete(k))))
+      .then(() => self.clients.claim()),
   );
 });
 
