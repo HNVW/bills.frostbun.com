@@ -6,7 +6,24 @@
 <meta name="description" content="Chia hoá đơn và thanh toán với bạn bè — split bills and settle up with friends.">
 <meta name="theme-color" content="#f9f6f2">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<link rel="manifest" href="/manifest.webmanifest">
+<script>
+  // The manifest is inlined as a data: URL. Chrome fetches /manifest.webmanifest without credentials, so
+  // behind Cloudflare Access that request is answered with a 302 to the login origin, and Chrome refuses
+  // to parse a manifest that arrived cross-origin — the installer then reports "No manifest detected".
+  // A data: URL never leaves the page, so Access cannot intercept it. Icon and start_url stay relative;
+  // Chrome resolves them against the document's URL, verified on desktop and Android.
+  document.write('\x3clink rel="manifest" href="data:application/manifest+json,' + encodeURIComponent(JSON.stringify({
+    name: "Hoá đơn chung", short_name: "Hoá đơn",
+    description: "Chia hoá đơn và thanh toán với bạn bè",
+    lang: "vi", start_url: "/", scope: "/", display: "standalone",
+    background_color: "#f9f6f2", theme_color: "#f9f6f2",
+    icons: [
+      { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+      { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" }
+    ]
+  })) + '">');
+</script>
 <link rel="icon" href="/icon-192.png" sizes="192x192">
 <link rel="apple-touch-icon" href="/icon-192.png">
 <link rel="preload" href="/fonts/publicsans-latin.woff2" as="font" type="font/woff2" crossorigin>
