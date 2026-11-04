@@ -111,7 +111,7 @@ needs no prior membership — it is how you join.
 | `DELETE /api/groups/:id` | delete with all data (any member) |
 | `POST /api/groups/:id/invite` | rotate invite token (member) |
 | `POST /api/groups/:id/members` | invite by email (member) |
-| `DELETE /api/groups/:id/members/:email` | leave, or remove anyone (any member) |
+| `DELETE /api/groups/:id/members/:email` | leave (your own email, the Leave button on your row), or remove anyone (any member) |
 | `GET·POST /api/groups/:id/bills` | list / create bill |
 | `PATCH·DELETE /api/groups/:id/bills/:billId` | edit / delete bill |
 | `GET·POST /api/groups/:id/payments` | list / create payment |
@@ -145,7 +145,8 @@ alone at weight 1. Errors are `{error}` with `400` (invalid input),
 - Invites: each group has an `invite_token`; the members dialog shows `/<host>/join/<token>` plus Copy and Rotate.
   `POST /api/join/:token` adds the signed-in caller and returns the group (idempotent; rotating invalidates the old token).
 - Membership is the whole permission model: any member can create, edit and delete any bill or payment, rename the
-  group, invite or remove members (each row in the members dialog has a Remove button), and delete the whole group.
+  group, invite or remove members (each row in the members dialog has Remove; your own row has Leave, which deletes
+  only your membership and returns you to the groups list), and delete the whole group.
   There is no owner role — `created_by` is recorded for provenance only. The app is built for a trusted group of
   friends; the boundary is membership, not authorship.
 - R2 layout: `qrs/<email>`, `bills/<group-id>/<bill-id>`, `payments/<group-id>/<payment-id>`. One object per entry at

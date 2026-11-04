@@ -445,8 +445,11 @@ async function viewGroup(id) {
         <button type="button" class="btn btn-quiet" data-close="members-dialog">${esc(t("common.close"))}</button></div>
       <ul class="member-list">${members.map((m) => `<li>
         <span class="member-name">${esc(m.name)}${m.name === m.email ? "" : ` <span class="muted">${esc(m.email)}</span>`}${m.email === me ? ` <span class="chip">${esc(t("members.you"))}</span>` : ""}</span>
-        ${m.email === me ? "" : `<button type="button" class="btn btn-quiet btn-danger member-remove" data-remove-member="${esc(m.email)}"
-          aria-label="${esc(t("members.remove", { name: m.name }))}" title="${esc(t("members.remove", { name: m.name }))}">${esc(t("members.removeShort"))}</button>`}
+        ${m.email === me
+          ? `<button type="button" class="btn btn-quiet btn-danger member-remove" data-leave-group="1"
+              aria-label="${esc(t("members.leave"))}" title="${esc(t("members.leave"))}">${esc(t("members.leaveShort"))}</button>`
+          : `<button type="button" class="btn btn-quiet btn-danger member-remove" data-remove-member="${esc(m.email)}"
+              aria-label="${esc(t("members.remove", { name: m.name }))}" title="${esc(t("members.remove", { name: m.name }))}">${esc(t("members.removeShort"))}</button>`}
       </li>`).join("")}</ul>
       <div class="stack">
         <label><span>${esc(t("members.inviteLink"))}</span><input id="invite-link" readonly value="${esc(location.origin + "/join/" + group.inviteToken)}"></label>
@@ -819,6 +822,12 @@ async function viewGroup(id) {
       const membersDlg = $("#members-dialog");
       membersDlg.showModal();
       autofocusIn(membersDlg);
+      return;
+    }
+    if (d.leaveGroup) {
+      if (!confirm(t("members.leaveConfirm", { name: group.name }))) return;
+      await api(`/api/groups/${id}/members/${encodeURIComponent(me)}`, { method: "DELETE" });
+      location.href = "/";
       return;
     }
     if (d.removeMember) {
