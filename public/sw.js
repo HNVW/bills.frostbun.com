@@ -1,39 +1,58 @@
-// Minimal offline shell: navigations fall back to the cached page, API calls are never cached.
-// Bump CACHE when the shell changes. It is also the safety valve for a botched deploy: a new value makes
-// the browser drop every old entry on activate, so HTML and its stylesheet can never pair across versions.
-const CACHE = "bills-v8";
-const SHELL = ["/", "/app.css", "/i18n.js", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png",
-  "/fonts/publicsans-latin.woff2", "/fonts/publicsans-vi.woff2"];
+// Push notifications only. The app is not cached: every screen needs /api/*, so a cached shell could
+// only ever render an empty page, and its version string had to be bumped by hand with every deploy.
 
-self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
-});
+self.addEventListener("install", () => self.skipWaiting());
 
+// Older versions cached the shell under bills-vN. Drop whatever is there so no browser keeps serving
+// a stale page after this worker takes over.
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
-      .then(() => self.clients.claim()),
+    caches.keys().then((keys) => Promise.all(keys.map((k) => caches.delete(k)))).then(() => self.clients.claim()),
   );
 });
 
+// The offline page is carried in this file rather than cached, so there is nothing to invalidate and
+// nothing to go stale: the worker and its fallback always ship together.
+const OFFLINE = `<!doctype html>
+<html lang="vi">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hoá đơn chung · Shared Bills</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    margin: 0; min-height: 100vh; display: grid; place-content: center; gap: 8px;
+    padding: 24px; text-align: center;
+    font: 400 16px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: #f9f6f2; color: #1d1a17;
+  }
+  h1 { margin: 0; font-size: 1.25rem; letter-spacing: -0.015em; }
+  p { margin: 0; max-width: 34ch; color: #55504a; }
+  button {
+    justify-self: center; margin-top: 8px; min-height: 38px; padding: 0 16px;
+    border: 1px solid #1d1a17; border-radius: 6px; background: #1d1a17; color: #f9f6f2;
+    font: inherit; font-size: 0.875rem; font-weight: 500; cursor: pointer;
+  }
+  @media (prefers-color-scheme: dark) {
+    body { background: #101419; color: #eef1f5; }
+    p { color: #a9b1bb; }
+    button { background: #eef1f5; border-color: #eef1f5; color: #101419; }
+  }
+</style>
+<h1>Không có kết nối</h1>
+<p>Hoá đơn cần mạng. Khi có kết nối lại, trang sẽ tải đúng dữ liệu của bạn.</p>
+<p lang="en">No connection. Bills needs the network; your data loads as soon as you are back online.</p>
+<button onclick="location.reload()">Thử lại · Retry</button>
+`;
+
+// A navigation that cannot reach the network gets that page instead of the browser's error. Nothing
+// else is intercepted: assets and the API go straight to the network, as they always did.
 self.addEventListener("fetch", (event) => {
   const { request } = event;
-  if (request.method !== "GET") return;
-  const url = new URL(request.url);
-  if (url.origin !== location.origin) return;
-  if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/img/")) return;
-
+  if (request.method !== "GET" || request.mode !== "navigate") return;
+  if (new URL(request.url).origin !== location.origin) return;
   event.respondWith(
-    fetch(request)
-      .then((res) => {
-        if (res.ok && request.mode === "navigate") {
-          const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put("/", copy));
-        }
-        return res;
-      })
-      .catch(() => caches.match(request).then((hit) => hit || caches.match("/"))),
+    fetch(request).catch(() => new Response(OFFLINE, { status: 200, headers: { "content-type": "text/html; charset=utf-8" } })),
   );
 });
 

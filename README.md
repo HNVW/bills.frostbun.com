@@ -8,7 +8,7 @@ moss, porcelain) and four dark (midnight, ink, plum, forest) — chosen in the s
 Both live in `localStorage` and are applied by a four-line inline script before first paint, so neither flashes.
 Copy lives in `public/i18n.js` (flat dotted keys, `{param}` interpolation); a missing Vietnamese key falls back to
 English rather than showing a raw key. Fonts are self-hosted (`public/fonts/`, Public Sans variable, latin + vietnamese
-subsets) because the PWA must render identically offline.
+subsets) so a slow CDN never swaps the face mid-render.
 
 ## Setup
 
@@ -83,8 +83,11 @@ needs `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in the org secrets).
 - Notifications: browser Web Push (VAPID). The nav bell toggles this browser's subscription; adding a bill pushes to
   every involved member except the person who added it. Secrets `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`
   must be set on the Worker (`wrangler secret put`); with them absent, push is silently skipped.
-- `/manifest.webmanifest`, `/sw.js`, `/icon-{192,512}.png` — installable PWA. The service worker caches the shell for
-  offline navigation only; `/api/*` and `/img/*` bypass it, so data is always live (and never readable offline).
+- `/manifest.webmanifest`, `/sw.js`, `/icon-{192,512}.png` — installable PWA. The service worker does **not** cache the
+  app: every screen needs `/api/*`, so a cached shell could only render an empty page, and the cache name had to be
+  bumped by hand on each deploy. Its only fetch job is a failed navigation, which gets a self-contained "no connection"
+  page carried as a string in `sw.js` — nothing to invalidate, nothing to go stale. Push notifications are unaffected.
+  The worker also deletes any `bills-vN` cache a previous version left behind.
 - `/img/<key>` — an entry image or a person's QR, readable by group members (QR: anyone sharing a group).
 
 Every `/api/*` route requires the Access identity (`401` otherwise). The only difference is that `/api/join/:token`
