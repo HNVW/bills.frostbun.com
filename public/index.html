@@ -79,6 +79,8 @@ import { DICTS, ERROR_KEYS, LANGUAGES, SCHEMES } from "/i18n.js";
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+// One pencil, shared by the group title, bill cards and payment cards.
+const editIcon = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M4 20h4l10-10a2.8 2.8 0 0 0-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/></svg>`;
 
 /* ---------- i18n ---------- */
 
@@ -327,13 +329,27 @@ async function viewGroup(id) {
 
   app.innerHTML = `
     <div class="page-head page-head--group">
-      <h1 id="gname">${esc(group.name)}</h1>
+      <div class="title-row">
+        <h1 id="gname">${esc(group.name)}</h1>
+        <button type="button" class="btn icon-btn" id="rename" title="${esc(t("group.rename"))}" aria-label="${esc(t("group.rename"))}">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 20h4l10-10a2.8 2.8 0 0 0-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/></svg>
+        </button>
+      </div>
       <div class="row head-actions">
         <button type="button" class="btn" data-members="1">${esc(t("group.members", { count: members.length }))}</button>
-        <button type="button" class="btn btn-quiet" id="rename">${esc(t("group.rename"))}</button>
-        <button type="button" class="btn btn-quiet btn-danger" id="del-group">${esc(t("group.delete"))}</button>
       </div>
     </div>
+
+    <dialog id="rename-dialog" aria-labelledby="rename-title">
+      <form id="rename-form">
+        <div class="dialog-head"><h2 id="rename-title">${esc(t("group.rename"))}</h2>
+          <button type="button" class="btn btn-quiet" data-close="rename-dialog">${esc(t("common.close"))}</button></div>
+        <div class="dialog-body">
+          <label><span>${esc(t("groups.name"))}</span><input name="name" maxlength="80" required autofocus value="${esc(group.name)}"></label>
+        </div>
+        <div class="dialog-foot"><button class="btn btn-primary">${esc(t("common.save"))}</button></div>
+      </form>
+    </dialog>
 
     <section class="summary" aria-labelledby="summary-title">
       <h2 id="summary-title">${esc(t("group.summary"))}</h2>
@@ -401,6 +417,10 @@ async function viewGroup(id) {
         <input name="email" type="email" placeholder="${esc(t("members.emailPlaceholder"))}" aria-label="${esc(t("members.invite"))}" autofocus required style="flex:1;min-width:180px">
         <button class="btn btn-primary">${esc(t("members.invite"))}</button>
       </div></form>
+      <div class="danger-zone">
+        <button type="button" class="btn btn-danger" id="del-group">${esc(t("group.delete"))}</button>
+        <span class="muted">${esc(t("group.deleteHint"))}</span>
+      </div>
     </dialog>
 
     <dialog id="bill-dialog" aria-labelledby="bill-title">
@@ -425,7 +445,10 @@ async function viewGroup(id) {
         </fieldset>
         <label><span>${esc(t("bill.image"))}</span><input name="file" type="file" accept="image/*"></label>
         <div class="thumbs" id="bill-thumbs"></div>
-        <div class="dialog-foot"><button class="btn btn-primary">${esc(t("bill.save"))}</button></div>
+        <div class="dialog-foot dialog-foot--split">
+          <button type="button" class="btn btn-danger hidden" data-del-bill="" id="bill-delete">${esc(t("common.delete"))}</button>
+          <button class="btn btn-primary">${esc(t("bill.save"))}</button>
+        </div>
       </form>
     </dialog>
 
@@ -439,24 +462,27 @@ async function viewGroup(id) {
         <label><span>${esc(t("bill.amount"))}</span><input name="amount" type="text" inputmode="numeric" autocomplete="off" placeholder="${esc(t("bill.amountPlaceholder"))}" required></label>
         <label><span>${esc(t("payment.image"))}</span><input name="file" type="file" accept="image/*"></label>
         <div class="thumbs" id="pay-thumbs"></div>
-        <div class="dialog-foot"><button class="btn btn-primary">${esc(t("payment.save"))}</button></div>
+        <div class="dialog-foot dialog-foot--split">
+          <button type="button" class="btn btn-danger hidden" data-del-pay="" id="pay-delete">${esc(t("common.delete"))}</button>
+          <button class="btn btn-primary">${esc(t("payment.save"))}</button>
+        </div>
       </form>
     </dialog>
 
     <dialog id="quickpay-dialog" aria-labelledby="quickpay-title">
       <div class="dialog-head"><h2 id="quickpay-title"></h2>
         <button type="button" class="btn btn-quiet" data-close="quickpay-dialog">${esc(t("common.close"))}</button></div>
-      <div class="stack">
+      <div class="dialog-body">
         <div id="quickpay-qr"></div>
         <div class="summary-total">
           <span class="muted">${esc(t("detail.amount"))}</span>
           <span class="amount num" id="quickpay-amount"></span>
         </div>
         <p class="muted">${esc(t("quickpay.hint"))}</p>
-        <div class="dialog-foot">
-          <button type="button" class="btn" data-close="quickpay-dialog">${esc(t("common.cancel"))}</button>
-          <button type="button" class="btn btn-primary" id="quickpay-done">${esc(t("quickpay.done"))}</button>
-        </div>
+      </div>
+      <div class="dialog-foot">
+        <button type="button" class="btn" data-close="quickpay-dialog">${esc(t("common.cancel"))}</button>
+        <button type="button" class="btn btn-primary" id="quickpay-done">${esc(t("quickpay.done"))}</button>
       </div>
     </dialog>
 
@@ -532,6 +558,9 @@ async function viewGroup(id) {
     state.billImage = null;
     state.billId = newId();
     drawThumbs("bill");
+    const del = $("#bill-delete");
+    del.dataset.delBill = "";
+    del.classList.add("hidden");
     $("#bill-dialog").showModal();
   }
 
@@ -579,17 +608,23 @@ async function viewGroup(id) {
     state.billId = b.id;
     state.billImage = b.image;
     drawThumbs("bill");
+    const del = $("#bill-delete");
+    del.dataset.delBill = b.id;
+    del.classList.remove("hidden");
     $("#bill-title").textContent = t("bill.edit");
     $("#bill-dialog").showModal();
   }
+
+  // The whole card is the edit affordance; the pencil beside the title is the keyboard-reachable control
+  // for it, so the card itself needs no tabindex and no role on a container that holds other buttons.
 
   function billCard(b) {
     const involved = b.participants.includes(me);
     // green edge: you paid it (green wins when both apply); red edge: you are in but did not pay
     const accent = b.paidBy === me ? " card--paid" : involved ? " card--involved" : "";
-    return `<article class="card${accent}">
+    return `<article class="card card--clickable${accent}" data-edit-bill="${b.id}">
       <div class="card-head">
-        <h3>${esc(b.title || t("detail.title"))}</h3>
+        <h3>${esc(b.title || t("detail.title"))}<button type="button" class="btn icon-btn card-edit" data-edit-bill="${b.id}" aria-label="${esc(t("common.edit"))}" title="${esc(t("common.edit"))}">${editIcon}</button></h3>
         <span class="money">${vnd(b.amount)}</span>
       </div>
       <div class="card-meta">
@@ -598,24 +633,20 @@ async function viewGroup(id) {
         <span>${esc(date(b.createdAt))}</span>
       </div>
       <div class="card-actions">
-        <button type="button" class="btn" data-details-bill="${b.id}">${esc(t("common.details"))}</button>
-        <button type="button" class="btn btn-quiet" data-edit-bill="${b.id}">${esc(t("common.edit"))}</button>
-        <button type="button" class="btn btn-quiet btn-danger" data-del-bill="${b.id}">${esc(t("common.delete"))}</button>
+        <button type="button" class="btn btn-quiet" data-details-bill="${b.id}">${esc(t("common.details"))}</button>
       </div>
     </article>`;
   }
 
   function paymentCard(p) {
-    return `<article class="card">
+    return `<article class="card card--clickable" data-edit-pay="${p.id}">
       <div class="card-head">
-        <h3>${esc(who(p.from))} → ${esc(who(p.to))}</h3>
+        <h3>${esc(who(p.from))} → ${esc(who(p.to))}<button type="button" class="btn icon-btn card-edit" data-edit-pay="${p.id}" aria-label="${esc(t("common.edit"))}" title="${esc(t("common.edit"))}">${editIcon}</button></h3>
         <span class="money">${vnd(p.amount)}</span>
       </div>
       <div class="card-meta"><span>${esc(date(p.createdAt))}</span></div>
       <div class="card-actions">
-        <button type="button" class="btn" data-details-pay="${p.id}">${esc(t("common.details"))}</button>
-        <button type="button" class="btn btn-quiet" data-edit-pay="${p.id}">${esc(t("common.edit"))}</button>
-        <button type="button" class="btn btn-quiet btn-danger" data-del-pay="${p.id}">${esc(t("common.delete"))}</button>
+        <button type="button" class="btn btn-quiet" data-details-pay="${p.id}">${esc(t("common.details"))}</button>
       </div>
     </article>`;
   }
@@ -637,6 +668,9 @@ async function viewGroup(id) {
     state.payImage = null;
     state.payId = newId();
     drawThumbs("pay");
+    const del = $("#pay-delete");
+    del.dataset.delPay = "";
+    del.classList.add("hidden");
     $("#pay-dialog").showModal();
   }
 
@@ -662,6 +696,9 @@ async function viewGroup(id) {
     state.payId = p.id;
     state.payImage = p.image;
     drawThumbs("pay");
+    const del = $("#pay-delete");
+    del.dataset.delPay = p.id;
+    del.classList.remove("hidden");
     $("#pay-title").textContent = t("payment.edit");
     $("#pay-dialog").showModal();
   }
@@ -718,10 +755,18 @@ async function viewGroup(id) {
   }
 
   app.onclick = async (e) => {
-    const el = e.target.closest("[data-details-bill],[data-details-pay],[data-qr],[data-quickpay],[data-members],[data-new-bill],[data-new-pay],[data-remove],[data-edit-bill],[data-edit-pay],[data-del-bill],[data-del-pay]");
+    // A card carries data-edit-* on the article and again on its pencil; the click must resolve to the
+    // innermost button so Details on a card opens the detail dialog, not the editor.
+    const el = e.target.closest("button, [data-edit-bill], [data-edit-pay]");
     if (!el) return;
     const d = el.dataset;
+    // a card opened from the keyboard is a button-like target: Enter on the pencil already handles it
     if (d.quickpay) { openQuickPay(d.quickpay, Number(d.amount)); return; }
+    if (d.members) return $("#members-dialog").showModal();
+    if (d.newBill) return resetBill();
+    if (d.newPay) return resetPay();
+    if (d.editBill) return editBill(bills.find((b) => b.id === d.editBill));
+    if (d.editPay) return editPay(payments.find((p) => p.id === d.editPay));
     try {
       if (d.detailsBill) {
         const b = bills.find((x) => x.id === d.detailsBill);
@@ -742,16 +787,10 @@ async function viewGroup(id) {
           `<span class="muted">${esc(dateTime(p.createdAt))}</span>`,
         ], p.image);
       } else if (d.qr) showQr(members.find((m) => m.email === d.qr));
-      else if (d.quickpay) openQuickPay(d.quickpay, Number(d.amount));
-      else if (d.members) $("#members-dialog").showModal();
-      else if (d.newBill) resetBill();
-      else if (d.newPay) resetPay();
       else if (d.remove) {
         if (state.billImage === d.remove) { state.billImage = null; drawThumbs("bill"); }
         else { state.payImage = null; drawThumbs("pay"); }
-      } else if (d.editBill) editBill(bills.find((b) => b.id === d.editBill));
-      else if (d.editPay) editPay(payments.find((p) => p.id === d.editPay));
-      else if (d.delBill) {
+      } else if (d.delBill) {
         if (!confirm(t("common.deleteBill"))) return;
         await api(`/api/groups/${id}/bills/${d.delBill}`, { method: "DELETE" });
         await render();
@@ -787,11 +826,17 @@ async function viewGroup(id) {
     } catch (err) { fail(err); }
   };
 
-  $("#rename").onclick = async () => {
-    const name = prompt(t("group.renamePrompt"), group.name);
-    if (!name || !name.trim()) return;
-    try { await api(`/api/groups/${id}`, { method: "PATCH", body: JSON.stringify({ name }) }); await render(); }
-    catch (err) { fail(err); }
+  $("#rename").onclick = () => $("#rename-dialog").showModal();
+
+  $("#rename-form").onsubmit = async (e) => {
+    e.preventDefault();
+    const name = e.target.elements.name.value.trim();
+    if (!name) return;
+    try {
+      await api(`/api/groups/${id}`, { method: "PATCH", body: JSON.stringify({ name }) });
+      $("#rename-dialog").close();
+      await render();
+    } catch (err) { fail(err); }
   };
 
   $("#del-group").onclick = async () => {
