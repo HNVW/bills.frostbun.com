@@ -30,11 +30,9 @@
   <a class="brand" href="/" id="home"></a>
   <div class="nav-actions">
     <button type="button" class="icon-btn" id="me"></button>
-    <button type="button" class="icon-btn" id="notify" aria-pressed="false"></button>
     <button type="button" class="icon-btn" id="settings" aria-haspopup="dialog">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
     </button>
-    <button type="button" class="icon-btn" id="logout"></button>
   </div>
 </nav>
 <main id="app" class="wrap"></main>
@@ -49,6 +47,22 @@
     <div class="stack" id="lang-list" role="group" aria-labelledby="settings-lang-label"></div>
     <span class="muted" id="shortcuts-title"></span>
     <div class="stack" id="shortcuts-hint"></div>
+
+    <div class="settings-section">
+      <span class="muted" id="settings-notify-label"></span>
+      <button type="button" class="btn lang-opt" id="notify" aria-pressed="false">
+        <span id="notify-state"></span><span class="muted" id="notify-action"></span>
+      </button>
+      <p class="muted" id="notify-hint"></p>
+    </div>
+
+    <div class="settings-section">
+      <span class="muted" id="settings-account-label"></span>
+      <button type="button" class="btn lang-opt" id="logout">
+        <span id="logout-label"></span>
+        <span class="muted" id="who"></span>
+      </button>
+    </div>
   </div>
 </dialog>
 
@@ -85,7 +99,7 @@ const editIcon = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" st
 /* ---------- i18n ---------- */
 
 const DEFAULT_LANG = "vi-vn";
-let lang = localStorage.getItem("lang") || DEFAULT_LANG;
+let lang = (localStorage.getItem("lang") || DEFAULT_LANG).toLowerCase();
 if (!DICTS[lang]) lang = DEFAULT_LANG;
 
 function t(key, params) {
@@ -120,6 +134,7 @@ function applyScheme(id, persist = true) {
 }
 
 function applyLang(code, repaint = true) {
+  code = String(code).toLowerCase();
   if (!DICTS[code]) return;
   lang = code;
   document.documentElement.lang = code;
@@ -206,10 +221,10 @@ async function paintNotify() {
   const btn = $("#notify");
   if (!btn) return;
   const state = await pushState().catch(() => "unsupported");
-  const bell = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M18 8a6 6 0 1 0-12 0c0 6-2 7-2 7h16s-2-1-2-7"/><path d="M10.3 20a2 2 0 0 0 3.4 0"/></svg>';
-  const bellOff = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M18 8a6 6 0 0 0-9.3-5"/><path d="M6.3 6.3A6 6 0 0 0 6 8c0 6-2 7-2 7h13"/><path d="M10.3 20a2 2 0 0 0 3.4 0"/><path d="M2 2l20 20"/></svg>';
-  btn.innerHTML = state === "on" ? bell : bellOff;
-  btn.title = state === "on" ? t("nav.notifyOn") : t("nav.notifyOff");
+  const label = state === "on" ? t("push.on") : state === "blocked" ? t("push.blockedShort") : state === "unsupported" ? t("push.unsupportedShort") : t("push.off");
+  $("#notify-state").textContent = label;
+  $("#notify-action").textContent = state === "on" || state === "off" ? t("push.toggle") : "";
+  $("#notify-hint").textContent = t("push.hint");
   btn.setAttribute("aria-pressed", String(state === "on"));
   btn.disabled = state === "unsupported" || state === "blocked";
   btn.onclick = togglePush;
@@ -321,6 +336,8 @@ async function viewGroup(id) {
   const group = data;
   const { bills, payments, summary } = data;
   if (data.myName) { meName = data.myName; $("#me").textContent = data.myName; }
+  meEmail = data.me;
+  if (meEmail) $("#who").textContent = meEmail;
   const members = group.members;
   const me = group.me;
   const nameOf = new Map(members.map((m) => [m.email, m.name]));
@@ -924,7 +941,6 @@ function paintChrome() {
   document.title = t("brand");
   $("#home").textContent = t("brand");
   $("#home").title = t("nav.home");
-  $("#logout").textContent = t("nav.logout");
   $("#logout").title = t("nav.logout");
   $("#settings").title = t("nav.theme");
   $("#settings").setAttribute("aria-label", t("nav.theme"));
@@ -932,6 +948,9 @@ function paintChrome() {
   $("#me").title = t("nav.me");
   $("#qr-dialog .dialog-head h2").textContent = t("common.qr");
   for (const [sel, text] of [
+    ["#settings-notify-label", "settings.notifications"],
+    ["#settings-account-label", "settings.account"],
+    ["#logout-label", "nav.logout"],
     ["#profile-dialog .dialog-head h2", "profile.title"],
     ["#profile-name-label", "profile.name"],
     ["#profile-qr-label", "profile.qr"],
@@ -958,9 +977,11 @@ function shortcutText() {
 /* ---------- router ---------- */
 
 let meName = "";
+let meEmail = "";
 
 function bindNav() {
   if (meName) $("#me").textContent = meName;
+  if (meEmail) $("#who").textContent = meEmail;
   $("#logout").onclick = () => { location.href = "/cdn-cgi/access/logout"; };
   $("#me").onclick = () => openProfile().catch(fail);
   $("#settings").onclick = openSettings;
@@ -1018,7 +1039,7 @@ async function render() {
   const join = /^\/join\/([0-9a-fA-F-]{36})\/?$/.exec(location.pathname);
   if (join) { bindNav(); return joinGroup(join[1]); }
   const m = /^\/([0-9a-f-]{36})\/?$/.exec(location.pathname);
-  if (!meName) api("/api/me").then((me) => { meName = me.name; $("#me").textContent = me.name; }).catch(() => {});
+  if (!meName) api("/api/me").then((me) => { meName = me.name; meEmail = me.email; $("#me").textContent = me.name; }).catch(() => {});
   bindNav();
   app.innerHTML = `<div class="stack" aria-busy="true"><div class="skeleton" style="width:45%"></div><div class="skeleton" style="width:75%"></div></div>`;
   try {
