@@ -76,7 +76,7 @@
   <form id="profile-form">
     <div class="dialog-head"><h2 id="profile-title"></h2>
       <button type="button" class="btn btn-quiet" data-close="profile-dialog"></button></div>
-    <label><span id="profile-name-label"></span><input name="name" maxlength="60" autofocus required></label>
+    <label><span id="profile-name-label"></span><input name="name" maxlength="60" data-autofocus required></label>
     <div class="stack">
       <span class="muted" id="profile-qr-label"></span>
       <div class="thumbs" id="qr-preview"></div>
@@ -100,6 +100,16 @@ const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 // One pencil, shared by the group title, bill cards and payment cards.
+// On a phone, focusing a field inside a dialog opens the keyboard and covers half the screen before the
+// person has read what the dialog says. Desktop keeps the convenience. Width only: a touchscreen laptop
+// reports a coarse pointer but is still a desktop layout.
+const wantsAutofocus = () => window.matchMedia("(min-width: 620px)").matches;
+function autofocusIn(dlg) {
+  if (!wantsAutofocus()) return;
+  const field = dlg?.querySelector("[data-autofocus]");
+  if (field) field.focus();
+}
+
 const editIcon = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M4 20h4l10-10a2.8 2.8 0 0 0-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/></svg>`;
 
 /* ---------- i18n ---------- */
@@ -247,6 +257,7 @@ async function openProfile() {
   dlg.querySelector("[name=name]").value = me?.name ?? "";
   drawQr();
   dlg.showModal();
+  autofocusIn(dlg);
 }
 
 function drawQr() {
@@ -292,7 +303,7 @@ async function viewGroups() {
         <form id="new-group">
           <div class="dialog-head"><h2 id="group-dialog-title">${esc(t("groups.newTitle"))}</h2>
             <button type="button" class="btn btn-quiet" data-close="group-dialog">${esc(t("common.close"))}</button></div>
-          <label><span>${esc(t("groups.name"))}</span><input name="name" placeholder="${esc(t("groups.namePlaceholder"))}" autofocus required maxlength="80"></label>
+          <label><span>${esc(t("groups.name"))}</span><input name="name" placeholder="${esc(t("groups.namePlaceholder"))}" data-autofocus required maxlength="80"></label>
           <div class="dialog-foot"><button class="btn btn-primary">${esc(t("groups.create"))}</button></div>
         </form>
       </dialog>
@@ -321,7 +332,12 @@ async function viewGroups() {
     app.onclick = async (e) => {
       const el = e.target.closest("[data-new-group], [data-page]");
       if (!el) return;
-      if (el.dataset.newGroup) { $("#new-group").reset(); $("#group-dialog").showModal(); }
+      if (el.dataset.newGroup) {
+        $("#new-group").reset();
+        const gd = $("#group-dialog");
+        gd.showModal();
+        autofocusIn(gd);
+      }
       else if (el.dataset.page) {
         offset = Math.max(0, el.dataset.page === "next" ? offset + limit : offset - limit);
         await load();
@@ -367,7 +383,7 @@ async function viewGroup(id) {
         <div class="dialog-head"><h2 id="rename-title">${esc(t("group.rename"))}</h2>
           <button type="button" class="btn btn-quiet" data-close="rename-dialog">${esc(t("common.close"))}</button></div>
         <div class="dialog-body">
-          <label><span>${esc(t("groups.name"))}</span><input name="name" maxlength="80" required autofocus value="${esc(group.name)}"></label>
+          <label><span>${esc(t("groups.name"))}</span><input name="name" maxlength="80" required data-autofocus value="${esc(group.name)}"></label>
         </div>
         <div class="dialog-foot"><button class="btn btn-primary">${esc(t("common.save"))}</button></div>
       </form>
@@ -439,7 +455,7 @@ async function viewGroup(id) {
         <p class="muted">${esc(t("members.rotateHint"))}</p>
       </div>
       <form id="invite" style="margin-top:var(--sp-4)"><div class="row">
-        <input name="email" type="email" placeholder="${esc(t("members.emailPlaceholder"))}" aria-label="${esc(t("members.invite"))}" autofocus required style="flex:1;min-width:180px">
+        <input name="email" type="email" placeholder="${esc(t("members.emailPlaceholder"))}" aria-label="${esc(t("members.invite"))}" data-autofocus required style="flex:1;min-width:180px">
         <button class="btn btn-primary">${esc(t("members.invite"))}</button>
       </div></form>
       <div class="danger-zone">
@@ -453,7 +469,7 @@ async function viewGroup(id) {
         <div class="dialog-head"><h2 id="bill-title">${esc(t("bill.add"))}</h2>
           <button type="button" class="btn btn-quiet" data-close="bill-dialog">${esc(t("common.close"))}</button></div>
         <input type="hidden" name="id">
-        <label><span>${esc(t("bill.description"))}</span><input name="title" placeholder="${esc(t("bill.descriptionPlaceholder"))}" autofocus maxlength="200"></label>
+        <label><span>${esc(t("bill.description"))}</span><input name="title" placeholder="${esc(t("bill.descriptionPlaceholder"))}" data-autofocus maxlength="200"></label>
         <label><span>${esc(t("bill.amount"))}</span><input name="amount" type="text" inputmode="numeric" autocomplete="off" placeholder="${esc(t("bill.amountPlaceholder"))}" required></label>
         <label><span>${esc(t("bill.paidBy"))}</span><select name="paidBy">${members.map((m) => `<option value="${esc(m.email)}">${esc(m.name)}</option>`).join("")}</select></label>
         <fieldset class="fieldset">
@@ -587,7 +603,9 @@ async function viewGroup(id) {
     const del = $("#bill-delete");
     del.dataset.delBill = "";
     del.classList.add("hidden");
-    $("#bill-dialog").showModal();
+    const billDialog = $("#bill-dialog");
+    billDialog.showModal();
+    autofocusIn(billDialog);
   }
 
   billForm.onsubmit = async (e) => {
@@ -622,6 +640,7 @@ async function viewGroup(id) {
       ? `<img src="${esc(m.qr)}" alt="" style="border-radius:var(--r-sm);border:1px solid var(--rule)">`
       : `<span class="muted">${esc(t("common.noQr"))}</span>`;
     dlg.showModal();
+  autofocusIn(dlg);
   }
 
   function editBill(b) {
@@ -637,7 +656,9 @@ async function viewGroup(id) {
     del.dataset.delBill = b.id;
     del.classList.remove("hidden");
     $("#bill-title").textContent = t("bill.edit");
-    $("#bill-dialog").showModal();
+    const billDialog = $("#bill-dialog");
+    billDialog.showModal();
+    autofocusIn(billDialog);
   }
 
   // The whole card is the edit affordance; the pencil beside the title is the keyboard-reachable control
@@ -677,7 +698,9 @@ async function viewGroup(id) {
       (image
         ? `<img class="qr-img" src="/img/${image}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('p'),{className:'muted',textContent:'${esc(t("detail.noImage"))}'}))">`
         : `<p class="muted">${esc(t("detail.noImage"))}</p>`);
-    $("#detail-dialog").showModal();
+    const detail = $("#detail-dialog");
+    detail.showModal();
+    autofocusIn(detail);
   }
 
   function resetPay() {
@@ -690,7 +713,9 @@ async function viewGroup(id) {
     const del = $("#pay-delete");
     del.dataset.delPay = "";
     del.classList.add("hidden");
-    $("#pay-dialog").showModal();
+    const payDialog = $("#pay-dialog");
+    payDialog.showModal();
+    autofocusIn(payDialog);
   }
 
   payForm.onsubmit = async (e) => {
@@ -719,7 +744,9 @@ async function viewGroup(id) {
     del.dataset.delPay = p.id;
     del.classList.remove("hidden");
     $("#pay-title").textContent = t("payment.edit");
-    $("#pay-dialog").showModal();
+    const payDialog = $("#pay-dialog");
+    payDialog.showModal();
+    autofocusIn(payDialog);
   }
 
   /* tabs */
@@ -775,7 +802,9 @@ async function viewGroup(id) {
         fail(err);
       }
     };
-    $("#quickpay-dialog").showModal();
+    const qp = $("#quickpay-dialog");
+    qp.showModal();
+    autofocusIn(qp);
   }
 
   app.onclick = async (e) => {
@@ -786,7 +815,12 @@ async function viewGroup(id) {
     const d = el.dataset;
     // a card opened from the keyboard is a button-like target: Enter on the pencil already handles it
     if (d.quickpay) { openQuickPay(d.quickpay, d.payee, Number(d.amount)); return; }
-    if (d.members) return $("#members-dialog").showModal();
+    if (d.members) {
+      const membersDlg = $("#members-dialog");
+      membersDlg.showModal();
+      autofocusIn(membersDlg);
+      return;
+    }
     if (d.removeMember) {
       if (!confirm(t("members.removeConfirm", { name: d.removeMember }))) return;
       await api(`/api/groups/${id}/members/${encodeURIComponent(d.removeMember)}`, { method: "DELETE" });
@@ -856,7 +890,11 @@ async function viewGroup(id) {
     } catch (err) { fail(err); }
   };
 
-  $("#rename").onclick = () => $("#rename-dialog").showModal();
+  $("#rename").onclick = () => {
+    const renameDlg = $("#rename-dialog");
+    renameDlg.showModal();
+    autofocusIn(renameDlg);
+  };
 
   $("#rename-form").onsubmit = async (e) => {
     e.preventDefault();
@@ -926,7 +964,9 @@ function paintSettings() {
 
 function openSettings() {
   paintSettings();
-  $("#settings-dialog").showModal();
+  const dlg = $("#settings-dialog");
+  dlg.showModal();
+  autofocusIn(dlg);
 }
 
 const SHORTCUTS = [
