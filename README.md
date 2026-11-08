@@ -177,7 +177,8 @@ alone at weight 1. Errors are `{error}` with `400` (invalid input),
   The API's `myBalance` keeps the raw payer-credit sign (positive = others owe you), so the direction you see is the
   inverse of the JSON number. Other members' rows use third-person verbs ("owes" / "is owed").
 - Bill cards: a 2px left edge in `--owed` when you paid, `--owe` when you are involved but did not pay, plain otherwise.
-  The meta line carries the per-person price (`33.334 ₫ each`, or `100.000 ₫–200.000 ₫` when the split is uneven).
+  The amount sits top right with the per-person price directly under it (`33.334 ₫ each`, or
+  `100.000 ₫–200.000 ₫` when the split is uneven).
   The card itself opens Details (a row per involved person with their weight and exact share, images, payer); the pencil
   beside the description opens the editor, which also holds Delete. Payment cards work the same way.
 - Folds: bills you are neither in nor paying for, payments between two other people, settle-up transfers that are not
@@ -188,8 +189,9 @@ alone at weight 1. Errors are `{error}` with `400` (invalid input),
   `from -> to` either way, so confirming has the same effect as recording it yourself.
 - Summary: each bill adds `amount` to the payer and subtracts that person's weighted share from each participant
   (leftover đồng go one each to the heaviest weights, then declaration order, so the shares sum to the amount);
-  payments shift balances; greedy min-cash-flow produces the transfer list. Each balance row also shows `spent`, the
-  total that person paid out, which is not the same as their weighted share.
+  payments shift balances; greedy min-cash-flow produces the transfer list. Each balance row also shows `spent`: the sum
+  of that person's shares across the bills they are in. It is what they consumed, not what they handed over — the payer
+  covers the whole bill.
 - Weights: the bill form shows a stepper (− / + by one, minimum 1, no maximum) per member beside its checkbox, disabled when
   the member is unchecked. `bills.weights` is the only stored list of involved people; `participants` in the API
   response is derived from its keys, so a bill with no participants and a bill with an empty weights map are the same

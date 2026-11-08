@@ -648,17 +648,18 @@ async function summaryOf(
   const nameOf = new Map(members.map((m) => [m.email, m.name]));
 
   const balances = new Map<string, number>(members.map((m) => [m.email, 0]));
-  // What each person actually paid out — distinct from the weighted share they consumed.
+  // What each person's share adds up to across the bills they are in — the money they consumed, which is
+  // not what they handed over (the payer covers the whole bill).
   const spent = new Map<string, number>(members.map((m) => [m.email, 0]));
   let totalSpent = 0;
   for (const b of bills) {
     totalSpent += b.amount;
-    spent.set(b.paidBy, (spent.get(b.paidBy) ?? 0) + b.amount);
     const weights = b.weights;
     if (!weights || !Object.keys(weights).length) continue;
     balances.set(b.paidBy, (balances.get(b.paidBy) ?? 0) + b.amount);
     for (const [person, share] of split(b.amount, weights)) {
       balances.set(person, (balances.get(person) ?? 0) - share);
+      spent.set(person, (spent.get(person) ?? 0) + share);
     }
   }
   for (const p of payments) {

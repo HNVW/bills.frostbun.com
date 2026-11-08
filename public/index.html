@@ -706,12 +706,14 @@ async function viewGroup(id) {
     return `<article class="card card--clickable${accent}" data-details-bill="${b.id}">
       <div class="card-head">
         <h3>${esc(b.title || t("detail.title"))}<button type="button" class="btn icon-btn card-edit" data-edit-bill="${b.id}" aria-label="${esc(t("common.edit"))}" title="${esc(t("common.edit"))}">${editIcon}</button></h3>
-        <span class="money">${vnd(b.amount)}</span>
+        <span class="card-right">
+          <span class="money">${vnd(b.amount)}</span>
+          ${each ? `<span class="card-amount-note num">${esc(each)}</span>` : ""}
+        </span>
       </div>
       <div class="card-meta">
         <span>${esc(b.paidBy === me ? t("group.youPaid") : t("group.paid", { name: who(b.paidBy) }))}</span>
         <span>${esc(t("group.involved", { count: b.participants.length }))}</span>
-        ${each ? `<span class="num">${esc(each)}</span>` : ""}
         <span>${esc(date(b.createdAt))}</span>
       </div>
     </article>`;

@@ -241,6 +241,10 @@ a.ledger-row:hover { background: var(--surface); }
 .card + .card { margin-top: var(--sp-3); }
 .card-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-3); }
 .card-head h3 { display: flex; align-items: center; gap: var(--sp-1); min-width: 0; }
+/* The total sits top right; the per-person price hangs directly under it, so the two numbers read as one
+   column and the meta line stays about people and dates. */
+.card-right { display: grid; justify-items: end; gap: 2px; text-align: right; flex-shrink: 0; }
+.card-amount-note { color: var(--muted); font-size: var(--text-sm); white-space: nowrap; }
 /* the card is the edit target; hover says so without moving anything */
 .card--clickable { cursor: pointer; transition: border-color var(--dur-micro) var(--ease-out), background-color var(--dur-micro) var(--ease-out); }
 .card--clickable:hover { border-color: var(--field-edge); background: var(--sunken); }
