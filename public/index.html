@@ -1111,9 +1111,12 @@ async function viewGroup(id) {
           if (b) go.href = href(b);
         };
         const picker = bankPicker(wrap, { pool: () => list.filter((b) => b.app), onPick: setHref, ariaLabel: "quickpay.pickBank" });
-        // Their stored bank first; otherwise the one they opened for a quick pay last time. `set` blanks a code
-        // that is no longer in the list, so a bank that lost its app just leaves the choice empty.
-        picker.set(mine?.code || localStorage.getItem("bank") || "");
+        // The bank last picked here, then their own stored bank, then nothing. Each step must be a bank this picker
+        // can actually open, so a remembered bank that lost its deeplink falls through to their own rather than
+        // leaving the choice empty beside a bank that would have worked.
+        const offered = (code) => list.some((b) => b.app && b.code === code);
+        const remembered = localStorage.getItem("bank") || "";
+        picker.set([remembered, mine?.code ?? ""].find(offered) ?? "");
         setHref(picker.value);
       });
     }
