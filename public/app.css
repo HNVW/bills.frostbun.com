@@ -209,9 +209,11 @@ a.ledger-row:hover { background: var(--surface); }
 .summary + .summary { margin-top: var(--sp-4); }
 .summary-total { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-4); }
 .summary-total .amount { font-size: var(--text-xl); font-weight: 600; font-variant-numeric: tabular-nums; }
-.balances { display: grid; gap: 0; border-top: 1px solid var(--rule); }
-.balance-row { display: grid; grid-template-columns: 1fr auto; gap: var(--sp-3); align-items: baseline; padding: var(--sp-2) 0; border-bottom: 1px solid var(--rule); }
-.balance-row:last-child { border-bottom: 0; }
+.balances { display: grid; gap: 0; }
+.balance-row { display: grid; grid-template-columns: 1fr auto; gap: var(--sp-3); align-items: baseline; padding: var(--sp-2) 0; }
+/* The balance leads and the spend follows on its own line, right-aligned under it: the number that settles
+   the group is what the eye should hit first. */
+.balance-figures { display: grid; justify-items: end; gap: 2px; text-align: right; }
 .settlements { display: grid; gap: var(--sp-2); }
 /* One line when it fits: names on the left, amount and action on the right. Only a narrow screen
    stacks them, and there the names take their own row. */

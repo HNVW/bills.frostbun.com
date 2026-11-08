@@ -389,10 +389,12 @@ async function viewGroup(id) {
           <button type="button" class="btn btn-quiet" style="justify-self:start;min-height:32px;padding:0" data-qr="${esc(b.email)}">${esc(b.name)}${
             b.email === me ? ` <span class="chip">${esc(t("members.you"))}</span>` : ""
           }</button>
-          <span class="row" style="justify-content:flex-end;gap:var(--sp-2)">
-            <span class="muted">${esc(t("group.spent", { amount: vnd(b.spent ?? 0) }))}</span>
-            ${settled ? "" : `<span class="muted">${esc(t(verb))}</span>`}
-            <span class="money ${settled ? "settled" : owes ? "owe" : "owed"}">${settled ? esc(t("balance.settled")) : vnd(Math.abs(b.balance))}</span>
+          <span class="balance-figures">
+            <span class="row" style="justify-content:flex-end;gap:var(--sp-2)">
+              ${settled ? "" : `<span class="muted">${esc(t(verb))}</span>`}
+              <span class="money ${settled ? "settled" : owes ? "owe" : "owed"}">${settled ? esc(t("balance.settled")) : vnd(Math.abs(b.balance))}</span>
+            </span>
+            <span class="muted num">${esc(t("group.spent", { amount: vnd(b.spent ?? 0) }))}</span>
           </span>
         </div>`;
   }
