@@ -365,13 +365,13 @@ async function viewGroup(id) {
   const nameOf = new Map(members.map((m) => [m.email, m.name]));
   const who = (email) => nameOf.get(email) ?? email;
 
-  // A single bill can split unevenly, so "each" is only one number when every share is equal. The leftover
-  // đồng land one at a time, which makes an even split differ by 1 — that is not an uneven split.
+  // A weight multiplies the base share, so the price to quote is one unit: the amount over the total weight.
+  // A weight-2 person pays twice that, but "each" still names what a weight-1 person pays.
   function eachText(b) {
-    const shares = Object.values(b.shares ?? {});
-    if (!shares.length) return "";
-    const lo = Math.min(...shares), hi = Math.max(...shares);
-    return hi - lo <= 1 ? t("group.each", { amount: vnd(hi) }) : `${vnd(lo)}–${vnd(hi)}`;
+    const weights = Object.values(b.weights ?? {});
+    const total = weights.length ? weights.reduce((a, w) => a + w, 0) : b.participants.length;
+    if (!total) return "";
+    return t("group.each", { amount: vnd(Math.floor(b.amount / total)) });
   }
 
   // A fold is one quiet line until opened. It carries the count, so nothing disappears silently.

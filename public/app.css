@@ -268,15 +268,13 @@ a.ledger-row:hover { background: var(--surface); }
 .fold > summary:hover { color: var(--ink); }
 .fold[open] > summary { margin-bottom: var(--sp-2); }
 
-/* A dotted marker and a hairline between people: the eye tracks the money column down a list, not across
-   one paragraph of names. */
+/* A dotted marker per person with no rules between rows: the money column lines up on its own, and a
+   separator per row would box a list that is only a dozen lines tall. */
 .share-list { display: grid; gap: 0; margin: var(--sp-1) 0 0; padding: 0; list-style: none; }
 .share-row {
   display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-3);
   padding: var(--sp-1) 0 var(--sp-1) var(--sp-4); position: relative;
-  border-bottom: 1px dotted var(--rule);
 }
-.share-row:last-child { border-bottom: 0; }
 .share-row::before { content: "•"; position: absolute; left: 0; color: var(--muted); }
 
 /* the two personal states, told by a 2px left edge only */
