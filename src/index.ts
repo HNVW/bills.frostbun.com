@@ -201,19 +201,27 @@ const groupOut = (g: Record<string, unknown>) => ({
   ...(g.member_count !== undefined ? { memberCount: g.member_count } : {}),
 });
 
-const billOut = (b: Record<string, unknown>) => ({
-  id: b.id as string,
-  groupId: b.group_id as string,
-  title: b.title as string,
-  amount: b.amount as number,
-  paidBy: b.paid_by as string,
+// `shares` is derived here so every client shows the same đồng the summary charges; only `weights` is stored.
+const sharesOf = (amount: number, weights: Record<string, number> | null) =>
+  weights && Object.keys(weights).length ? Object.fromEntries(split(amount, weights)) : {};
+
+const billOut = (b: Record<string, unknown>) => {
   // weights is the only stored list: its keys are the participants, in declaration order.
-  participants: Object.keys(parse<Record<string, number>>(b.weights as string, {})),
-  weights: parse<Record<string, number> | null>(b.weights as string, null),
-  image: (b.image ?? null) as string | null,
-  createdBy: b.created_by as string,
-  createdAt: b.created_at as string,
-});
+  const weights = parse<Record<string, number> | null>(b.weights as string, null);
+  return {
+    id: b.id as string,
+    groupId: b.group_id as string,
+    title: b.title as string,
+    amount: b.amount as number,
+    paidBy: b.paid_by as string,
+    participants: Object.keys(weights ?? {}),
+    weights,
+    shares: sharesOf(b.amount as number, weights),
+    image: (b.image ?? null) as string | null,
+    createdBy: b.created_by as string,
+    createdAt: b.created_at as string,
+  };
+};
 
 const paymentOut = (p: Record<string, unknown>) => ({
   id: p.id as string,
@@ -233,8 +241,6 @@ function parseAmount(v: unknown): number | null {
 
 // A bill's involved people and their shares are one thing: `weights` maps email -> weight, and its keys
 // are the participants. String keys keep JSON decimal-safe. An absent map means the fallback person at 1.
-const MAX_WEIGHT = 100;
-
 function parseWeights(v: unknown, allowed: Set<string>, fallback: string): Record<string, number> | string {
   if (v === undefined || v === null) return { [fallback]: 1 };
   if (typeof v !== "object" || Array.isArray(v)) return "weights must be an object";
@@ -243,7 +249,7 @@ function parseWeights(v: unknown, allowed: Set<string>, fallback: string): Recor
     const email = normEmail(raw);
     if (!email) continue;
     if (!allowed.has(email)) return `not a member of this group: ${email}`;
-    if (typeof w !== "number" || !Number.isFinite(w) || w <= 0 || w > MAX_WEIGHT) return `weight for ${email} must be above 0 and at most ${MAX_WEIGHT}`;
+    if (typeof w !== "number" || !Number.isFinite(w) || w < 1) return `weight for ${email} must be at least 1`;
     out[email] = w;
   }
   if (!Object.keys(out).length) return "participants required";
@@ -501,7 +507,13 @@ on("POST", "/api/groups/:id/bills", async ({ req, env, email, p, ctx }) => {
     .bind(bill.id, id, bill.title, bill.amount, bill.paidBy, JSON.stringify(weights), image, email, bill.createdAt)
     .run();
   ctx.waitUntil(notifyBillCreated(env, id, email, { ...bill, participants: Object.keys(weights) }).catch(() => undefined));
-  return json({ ...bill, participants: Object.keys(weights), image }, 201);
+  return json(
+    billOut({
+      id: bill.id, group_id: id, title: bill.title, amount: bill.amount, paid_by: bill.paidBy,
+      weights: JSON.stringify(weights), image, created_by: email, created_at: bill.createdAt,
+    }),
+    201,
+  );
 });
 
 on("PATCH", "/api/groups/:id/bills/:bill", async ({ req, env, email, p }) => {
@@ -529,7 +541,7 @@ on("PATCH", "/api/groups/:id/bills/:bill", async ({ req, env, email, p }) => {
     .bind(title, amount, paidBy, JSON.stringify(weights), image, billId, id)
     .run();
   if (before && before !== image) await deleteImages(env, [before]);
-  return json({ ...current, title, amount, paidBy, participants: Object.keys(weights), weights, image });
+  return json(billOut({ ...row, title, amount, paid_by: paidBy, weights: JSON.stringify(weights), image }));
 });
 
 on("DELETE", "/api/groups/:id/bills/:bill", async ({ env, email, p }) => {
@@ -636,9 +648,12 @@ async function summaryOf(
   const nameOf = new Map(members.map((m) => [m.email, m.name]));
 
   const balances = new Map<string, number>(members.map((m) => [m.email, 0]));
+  // What each person actually paid out — distinct from the weighted share they consumed.
+  const spent = new Map<string, number>(members.map((m) => [m.email, 0]));
   let totalSpent = 0;
   for (const b of bills) {
     totalSpent += b.amount;
+    spent.set(b.paidBy, (spent.get(b.paidBy) ?? 0) + b.amount);
     const weights = b.weights;
     if (!weights || !Object.keys(weights).length) continue;
     balances.set(b.paidBy, (balances.get(b.paidBy) ?? 0) + b.amount);
@@ -665,7 +680,7 @@ async function summaryOf(
 
   return {
     totalSpent,
-    balances: [...balances].map(([m, v]) => ({ email: m, name: nameOf.get(m) ?? m, balance: v })),
+    balances: [...balances].map(([m, v]) => ({ email: m, name: nameOf.get(m) ?? m, balance: v, spent: spent.get(m) ?? 0 })),
     settlements: settlements.map((t) => ({ ...t, fromName: nameOf.get(t.from) ?? t.from, toName: nameOf.get(t.to) ?? t.to })),
   };
 }

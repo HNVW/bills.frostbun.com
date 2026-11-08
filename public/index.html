@@ -365,6 +365,59 @@ async function viewGroup(id) {
   const nameOf = new Map(members.map((m) => [m.email, m.name]));
   const who = (email) => nameOf.get(email) ?? email;
 
+  // A single bill can split unevenly, so "each" is only one number when every share is equal. The leftover
+  // đồng land one at a time, which makes an even split differ by 1 — that is not an uneven split.
+  function eachText(b) {
+    const shares = Object.values(b.shares ?? {});
+    if (!shares.length) return "";
+    const lo = Math.min(...shares), hi = Math.max(...shares);
+    return hi - lo <= 1 ? t("group.each", { amount: vnd(hi) }) : `${vnd(lo)}–${vnd(hi)}`;
+  }
+
+  // A fold is one quiet line until opened. It carries the count, so nothing disappears silently.
+  function fold(label, html) {
+    return `<details class="fold"><summary>${esc(label)}</summary>${html}</details>`;
+  }
+
+  function balanceRow(b) {
+    const settled = Math.abs(b.balance) < settledThreshold;
+    const owes = b.balance < 0;
+    // your own row speaks in the second person; everyone else's in the third
+    const verb = b.email === me ? (owes ? "balance.owe" : "balance.owed") : (owes ? "balance.owes" : "balance.owedTo");
+    return `<div class="balance-row">
+          <button type="button" class="btn btn-quiet" style="justify-self:start;min-height:32px;padding:0" data-qr="${esc(b.email)}">${esc(b.name)}</button>
+          <span class="row" style="justify-content:flex-end;gap:var(--sp-2)">
+            <span class="muted">${esc(t("group.spent", { amount: vnd(b.spent ?? 0) }))}</span>
+            ${settled ? "" : `<span class="muted">${esc(t(verb))}</span>`}
+            <span class="money ${settled ? "settled" : owes ? "owe" : "owed"}">${settled ? esc(t("balance.settled")) : vnd(Math.abs(b.balance))}</span>
+          </span>
+        </div>`;
+  }
+
+  function balancesBlock(rows) {
+    const mine = rows.find((b) => b.email === me);
+    const others = rows.filter((b) => b.email !== me);
+    const open = others.filter((b) => Math.abs(b.balance) >= settledThreshold);
+    const settled = others.filter((b) => Math.abs(b.balance) < settledThreshold);
+    return `${mine ? balanceRow(mine) : ""}${open.map(balanceRow).join("")}${
+      settled.length ? fold(t("group.settledRows", { count: settled.length }), settled.map(balanceRow).join("")) : ""}`;
+  }
+
+  function settlementBlock(settlements) {
+    if (!settlements.length) return `<p class="muted">${esc(t("group.allSettled"))}</p>`;
+    const row = (s) => `<div class="settlement">
+            <span class="settlement-names">${esc(s.fromName)} → ${esc(s.toName)}</span>
+            <span class="money settlement-amount">${vnd(s.amount)}</span>
+            <button type="button" class="btn" data-quickpay="${esc(s.from)}" data-payee="${esc(s.to)}" data-amount="${s.amount}">${
+              esc(t(s.from === me ? "quickpay.pay" : "quickpay.receive"))
+            }</button>
+          </div>`;
+    const mine = settlements.filter((s) => s.from === me || s.to === me);
+    const others = settlements.filter((s) => s.from !== me && s.to !== me);
+    return `<div class="settlements"><h3>${esc(t("group.settleUp"))}</h3>${mine.map(row).join("")}${
+      others.length ? fold(t("group.otherTransfers", { count: others.length }), others.map(row).join("")) : ""}</div>`;
+  }
+
   app.innerHTML = `
     <div class="page-head page-head--group">
       <div class="title-row">
@@ -395,30 +448,8 @@ async function viewGroup(id) {
         <span class="muted">${esc(t("group.totalSpent"))}</span>
         <span class="amount num">${vnd(summary.totalSpent)}</span>
       </div>
-      <div class="balances">
-        ${summary.balances.map((b) => {
-          const settled = Math.abs(b.balance) < settledThreshold;
-          const owes = b.balance < 0;
-          // your own row speaks in the second person; everyone else's in the third
-          const verb = b.email === me ? (owes ? "balance.owe" : "balance.owed") : (owes ? "balance.owes" : "balance.owedTo");
-          return `<div class="balance-row">
-          <button type="button" class="btn btn-quiet" style="justify-self:start;min-height:32px;padding:0" data-qr="${esc(b.email)}">${esc(b.name)}</button>
-          <span class="row" style="justify-content:flex-end;gap:var(--sp-2)">
-            ${settled ? "" : `<span class="muted">${esc(t(verb))}</span>`}
-            <span class="money ${settled ? "settled" : owes ? "owe" : "owed"}">${settled ? esc(t("balance.settled")) : vnd(Math.abs(b.balance))}</span>
-          </span>
-        </div>`; }).join("")}
-      </div>
-      ${summary.settlements.length
-        ? `<div class="settlements"><h3>${esc(t("group.settleUp"))}</h3>${summary.settlements.map((s) => `
-          <div class="settlement">
-            <span class="settlement-names">${esc(s.fromName)} → ${esc(s.toName)}</span>
-            <span class="money settlement-amount">${vnd(s.amount)}</span>
-            <button type="button" class="btn" data-quickpay="${esc(s.from)}" data-payee="${esc(s.to)}" data-amount="${s.amount}">${
-              esc(t(s.from === me ? "quickpay.pay" : "quickpay.receive"))
-            }</button>
-          </div>`).join("")}</div>`
-        : `<p class="muted">${esc(t("group.allSettled"))}</p>`}
+      <div class="balances">${balancesBlock(summary.balances)}</div>
+      ${settlementBlock(summary.settlements)}
     </section>
 
     <div class="tabs" role="tablist">
@@ -430,14 +461,14 @@ async function viewGroup(id) {
       <div class="row" style="justify-content:flex-end;margin-bottom:var(--sp-3)">
         <button type="button" class="btn btn-primary" data-new-bill="1">${esc(t("group.addBill"))}</button>
       </div>
-      ${bills.length ? bills.map((b) => billCard(b)).join("") : `<div class="empty">${esc(t("group.noBills"))}</div>`}
+      ${bills.length ? billList(bills) : `<div class="empty">${esc(t("group.noBills"))}</div>`}
     </section>
 
     <section id="panel-payments" role="tabpanel" aria-labelledby="tab-payments" class="hidden">
       <div class="row" style="justify-content:flex-end;margin-bottom:var(--sp-3)">
         <button type="button" class="btn btn-primary" data-new-pay="1">${esc(t("group.addPayment"))}</button>
       </div>
-      ${payments.length ? payments.map((p) => paymentCard(p)).join("") : `<div class="empty">${esc(t("group.noPayments"))}</div>`}
+      ${payments.length ? paymentList(payments) : `<div class="empty">${esc(t("group.noPayments"))}</div>`}
     </section>
 
     <dialog id="members-dialog" aria-labelledby="members-title">
@@ -482,7 +513,7 @@ async function viewGroup(id) {
             <label class="check"><input type="checkbox" name="participants" value="${esc(m.email)}" checked> ${esc(m.name)}</label>
             <span class="stepper">
               <button type="button" class="step" data-step="-1" data-for="${esc(m.email)}" aria-label="${esc(t("bill.weightDown"))}" tabindex="-1">−</button>
-              <input type="number" name="weight" data-for="${esc(m.email)}" min="1" max="100" step="1" value="1" inputmode="numeric" aria-label="${esc(t("bill.weight"))} — ${esc(m.name)}">
+              <input type="number" name="weight" data-for="${esc(m.email)}" min="1" step="1" value="1" inputmode="numeric" aria-label="${esc(t("bill.weight"))} — ${esc(m.name)}">
               <button type="button" class="step" data-step="1" data-for="${esc(m.email)}" aria-label="${esc(t("bill.weightUp"))}" tabindex="-1">+</button>
             </span>
           </div>`).join("")}
@@ -560,9 +591,9 @@ async function viewGroup(id) {
 
   const boxes = () => $$('input[name="participants"]', billForm);
 
-  // Weights are whole numbers 1 to 100: 1 is an even share, 2 pays double. The stepper and the native
+  // Weights are whole numbers from 1 up: 1 is an even share, 2 pays double. The stepper and the native
   // arrow keys both move by one, and a typed value is clamped on the way out.
-  const clampWeight = (v) => Math.min(100, Math.max(1, Math.round(Number(v) || 1)));
+  const clampWeight = (v) => Math.max(1, Math.round(Number(v) || 1));
   const weightOf = (email) => clampWeight($(`input[name="weight"][data-for="${CSS.escape(email)}"]`, billForm).value);
 
   // A weight only means something for a checked person, so an unchecked row disables its field.
@@ -671,6 +702,7 @@ async function viewGroup(id) {
     const involved = b.participants.includes(me);
     // green edge: you paid it (green wins when both apply); red edge: you are in but did not pay
     const accent = b.paidBy === me ? " card--paid" : involved ? " card--involved" : "";
+    const each = eachText(b);
     return `<article class="card card--clickable${accent}" data-details-bill="${b.id}">
       <div class="card-head">
         <h3>${esc(b.title || t("detail.title"))}<button type="button" class="btn icon-btn card-edit" data-edit-bill="${b.id}" aria-label="${esc(t("common.edit"))}" title="${esc(t("common.edit"))}">${editIcon}</button></h3>
@@ -679,9 +711,25 @@ async function viewGroup(id) {
       <div class="card-meta">
         <span>${esc(b.paidBy === me ? t("group.youPaid") : t("group.paid", { name: who(b.paidBy) }))}</span>
         <span>${esc(t("group.involved", { count: b.participants.length }))}</span>
+        ${each ? `<span class="num">${esc(each)}</span>` : ""}
         <span>${esc(date(b.createdAt))}</span>
       </div>
     </article>`;
+  }
+
+  // Bills you are not in are noise in the list: one closed fold, in place, keeps the order intact.
+  function billList(list) {
+    const mine = list.filter((b) => b.participants.includes(me) || b.paidBy === me);
+    const others = list.filter((b) => !b.participants.includes(me) && b.paidBy !== me);
+    return `${mine.map(billCard).join("")}${
+      others.length ? fold(t("group.uninvolvedBills", { count: others.length }), others.map(billCard).join("")) : ""}`;
+  }
+
+  function paymentList(list) {
+    const mine = list.filter((p) => p.from === me || p.to === me);
+    const others = list.filter((p) => p.from !== me && p.to !== me);
+    return `${mine.map(paymentCard).join("")}${
+      others.length ? fold(t("group.uninvolvedPayments", { count: others.length }), others.map(paymentCard).join("")) : ""}`;
   }
 
   function paymentCard(p) {
@@ -843,14 +891,17 @@ async function viewGroup(id) {
     try {
       if (d.detailsBill) {
         const b = bills.find((x) => x.id === d.detailsBill);
-        const shares = b.participants.map((p) => {
+        const rows = b.participants.map((p) => {
           const w = b.weights?.[p];
-          return w && w !== 1 ? `${esc(who(p))} ×${w}` : esc(who(p));
-        });
+          const share = b.shares?.[p];
+          return `<div class="share-row"><span>${esc(who(p))}${w && w !== 1 ? ` <span class="chip">×${esc(w)}</span>` : ""}</span>${
+            share === undefined ? "" : `<span class="money">${vnd(share)}</span>`
+          }</div>`;
+        }).join("");
         showDetails(b.title || t("detail.title"), [
           `${esc(t("detail.amount"))}: <span class="money">${vnd(b.amount)}</span>`,
           `${esc(t("detail.paidBy"))}: ${esc(who(b.paidBy))}`,
-          `${esc(t("detail.involved", { count: b.participants.length }))}: ${shares.join(", ")}`,
+          `<div>${esc(t("detail.involved", { count: b.participants.length }))}</div><div class="share-list">${rows}</div>`,
           `<span class="muted">${esc(dateTime(b.createdAt))}</span>`,
         ], b.image);
       } else if (d.detailsPay) {

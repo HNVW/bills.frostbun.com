@@ -126,7 +126,7 @@ needs no prior membership — it is how you join.
 Limits: group and display names 1–80 and 1–60 chars, bill title 200 chars (truncated), at least one involved member,
 one image per entry, 8 MB per image, `limit` capped at 50. Amounts are positive integers in đồng; the form groups
 digits per locale (`100.000` in vi, `100,000` in en) and sends the bare number. A bill carries `weights`, an object of
-participant email to weight (above 0, at most 100): a person of weight 2 pays twice the share of weight 1. Its keys
+participant email to weight (at least 1, no upper bound): a person of weight 2 pays twice the share of weight 1. Its keys
 *are* the participants, in split order — there is no separate list to keep in sync. An absent map means the payer
 alone at weight 1. Errors are `{error}` with `400` (invalid input),
 `401` (no Access identity), `403` (not a member), `404`, or `409` (entry id already used, referenced image vanished).
@@ -177,15 +177,21 @@ alone at weight 1. Errors are `{error}` with `400` (invalid input),
   The API's `myBalance` keeps the raw payer-credit sign (positive = others owe you), so the direction you see is the
   inverse of the JSON number. Other members' rows use third-person verbs ("owes" / "is owed").
 - Bill cards: a 2px left edge in `--owed` when you paid, `--owe` when you are involved but did not pay, plain otherwise.
-  The card itself opens Details (names, images, payer, per-person weights); the pencil beside the description opens the
-  editor, which also holds Delete. Payment cards work the same way.
+  The meta line carries the per-person price (`33.334 ₫ each`, or `100.000 ₫–200.000 ₫` when the split is uneven).
+  The card itself opens Details (a row per involved person with their weight and exact share, images, payer); the pencil
+  beside the description opens the editor, which also holds Delete. Payment cards work the same way.
+- Folds: bills you are neither in nor paying for, payments between two other people, settle-up transfers that are not
+  yours, and balances already settled all render inside a closed `<details>` naming their count. They stay in order,
+  so opening one restores the unfiltered list.
 - Quick pay: each settle-up row carries a button at its right — Pay when you are the payer, Confirm when someone owes
   you. It shows the payee's QR and the exact amount, then Done writes one payment row and repaints. The transfer is
   `from -> to` either way, so confirming has the same effect as recording it yourself.
 - Summary: each bill adds `amount` to the payer and subtracts that person's weighted share from each participant
   (leftover đồng go one each to the heaviest weights, then declaration order, so the shares sum to the amount);
-  payments shift balances; greedy min-cash-flow produces the transfer list.
-- Weights: the bill form shows a stepper (− / + by one, clamped 1–100) per member beside its checkbox, disabled when
+  payments shift balances; greedy min-cash-flow produces the transfer list. Each balance row also shows `spent`, the
+  total that person paid out, which is not the same as their weighted share.
+- Weights: the bill form shows a stepper (− / + by one, minimum 1, no maximum) per member beside its checkbox, disabled when
   the member is unchecked. `bills.weights` is the only stored list of involved people; `participants` in the API
   response is derived from its keys, so a bill with no participants and a bill with an empty weights map are the same
-  rejected state.
+  rejected state. `shares` (email → đồng) is computed by the Worker from `weights` so the card, the details dialog and
+  the summary all show the same split.

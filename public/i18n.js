@@ -47,6 +47,12 @@ export const DICTS = {
     "group.paid": "{name} paid",
     "group.involved": "{count} involved",
     "group.youPaid": "You paid",
+    "group.each": "{amount} each",
+    "group.spent": "spent {amount}",
+    "group.uninvolvedBills": "Not involved ({count})",
+    "group.uninvolvedPayments": "Not involved ({count})",
+    "group.otherTransfers": "Other transfers ({count})",
+    "group.settledRows": "Settled ({count})",
     "group.showQr": "Show {name}'s payment QR",
 
     "members.title": "Members",
@@ -180,7 +186,7 @@ export const DICTS = {
     "error.imageSize": "Images must be under 8 MB.",
     "error.imageType": "Only images can be uploaded.",
     "error.file": "Choose a file first.",
-    "error.weight": "Weights must be above 0 and at most 100.",
+    "error.weight": "Weights must be at least 1.",
   },
 
   "vi-vn": {
@@ -229,6 +235,12 @@ export const DICTS = {
     "group.paid": "{name} đã trả",
     "group.involved": "{count} người tham gia",
     "group.youPaid": "Bạn đã trả",
+    "group.each": "{amount} mỗi phần",
+    "group.spent": "đã chi {amount}",
+    "group.uninvolvedBills": "Không liên quan ({count})",
+    "group.uninvolvedPayments": "Không liên quan ({count})",
+    "group.otherTransfers": "Chuyển khoản khác ({count})",
+    "group.settledRows": "Đã xong ({count})",
     "group.showQr": "Xem mã QR của {name}",
 
     "members.title": "Thành viên",
@@ -362,7 +374,7 @@ export const DICTS = {
     "error.imageSize": "Ảnh phải nhỏ hơn 8 MB.",
     "error.imageType": "Chỉ được tải lên ảnh.",
     "error.file": "Chọn một tệp trước.",
-    "error.weight": "Trọng số phải lớn hơn 0 và tối đa 100.",
+    "error.weight": "Trọng số phải từ 1 trở lên.",
   },
 };
 
