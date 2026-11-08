@@ -718,10 +718,12 @@ async function viewGroup(id) {
         <span class="money">${vnd(b.amount)}</span>
       </div>
       <div class="card-meta">
-        <span>${esc(b.paidBy === me ? t("group.youPaid") : t("group.paid", { name: who(b.paidBy) }))}</span>
-        <span>${esc(t("group.involved", { count: b.participants.length }))}</span>
-        ${each ? `<span class="num">${esc(each)}</span>` : ""}
-        <span>${esc(date(b.createdAt))}</span>
+        <span class="card-meta-info">
+          <span>${esc(b.paidBy === me ? t("group.youPaid") : t("group.paid", { name: who(b.paidBy) }))}</span>
+          <span>${esc(t("group.involved", { count: b.participants.length }))}</span>
+          <span>${esc(date(b.createdAt))}</span>
+        </span>
+        ${each ? `<span class="card-each num">${esc(each)}</span>` : ""}
       </div>
     </article>`;
   }

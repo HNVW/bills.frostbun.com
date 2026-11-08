@@ -209,15 +209,22 @@ a.ledger-row:hover { background: var(--surface); }
 .summary + .summary { margin-top: var(--sp-4); }
 .summary-total { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-4); }
 .summary-total .amount { font-size: var(--text-xl); font-weight: 600; font-variant-numeric: tabular-nums; }
-.balances { display: grid; gap: 0; }
-.balance-row { display: grid; grid-template-columns: 1fr auto; gap: var(--sp-3); align-items: baseline; padding: var(--sp-2) 0; }
+.balances { display: grid; gap: 0; border-top: 1px solid var(--rule); }
+.balance-row { display: grid; grid-template-columns: 1fr auto; gap: var(--sp-3); align-items: baseline; padding: var(--sp-2) 0; border-bottom: 1px solid var(--rule); }
+.balance-row:last-child { border-bottom: 0; }
 /* The balance leads and the spend follows on its own line, right-aligned under it: the number that settles
    the group is what the eye should hit first. */
 .balance-figures { display: grid; justify-items: end; gap: 2px; text-align: right; }
-.settlements { display: grid; gap: var(--sp-2); }
+.settlements { display: grid; gap: 0; border-top: 1px solid var(--rule); }
 /* One line when it fits: names on the left, amount and action on the right. Only a narrow screen
    stacks them, and there the names take their own row. */
-.settlement { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: var(--sp-3); align-items: center; }
+.settlement {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: var(--sp-3); align-items: center;
+  padding: var(--sp-3) 0; border-bottom: 1px solid var(--rule);
+}
+.settlement:last-child { border-bottom: 0; }
+/* A trailing fold gets its rule from the last settlement row instead of drawing its own. */
+.settlements > .fold { border-top: 0; }
 .settlement-names { overflow-wrap: anywhere; }
 .settlement-amount { justify-self: end; white-space: nowrap; }
 @media (max-width: 480px) {
@@ -250,7 +257,11 @@ a.ledger-row:hover { background: var(--surface); }
 .card-edit { color: var(--muted); flex-shrink: 0; }
 .card--clickable:hover .card-edit { color: var(--ink); }
 
-.card-meta { display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); color: var(--muted); font-size: var(--text-sm); }
+.card-meta { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--sp-1) var(--sp-3); color: var(--muted); font-size: var(--text-sm); }
+/* payer, count and date group on the left; the per-person price takes the right edge so it hangs under the
+   card's total, the two numbers reading as one column */
+.card-meta-info { display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); min-width: 0; }
+.card-each { margin-left: auto; white-space: nowrap; }
 
 /* A fold hides rows that are not about you: one quiet line naming the count, the same rule as a row.
    Under balance rows the row above already ends with a rule, so the fold adds none of its own. */
