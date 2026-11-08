@@ -178,8 +178,7 @@ alone at weight 1. Errors are `{error}` with `400` (invalid input),
   same way. The API's `myBalance` keeps the raw payer-credit sign (positive = others owe you), so the direction you
   see is the inverse of the JSON number.
 - Bill cards: a 2px left edge in `--owed` when you paid, `--owe` when you are involved but did not pay, plain otherwise.
-  The amount sits top right with the per-person price directly under it (`33.334 ₫ each`, or
-  `100.000 ₫–200.000 ₫` when the split is uneven).
+  The meta line carries the payer, the count, the per-person price (`33.334 ₫ each`) and the date.
   The card itself opens Details (a row per involved person with their weight, exact share and the `you` chip on your
   own row, images, payer); the pencil beside the description opens the editor, which also holds Delete. Payment cards
   work the same way.
