@@ -172,15 +172,17 @@ alone at weight 1. Errors are `{error}` with `400` (invalid input),
   send that answers `404`/`410`).
 - Dialogs focus their first field only at 620px and wider: on a phone the keyboard would open over a dialog
   nobody has read yet. Every dialog's head and footer stay pinned while its body scrolls.
-- Balance display is from the viewer's side and never uses a sign: the words "you pay" / "you get back" (vi: "bạn trả"
-  / "bạn nhận lại") sit beside an unsigned amount, coloured `--owe` / `--owed`, and |balance| < 1000 ₫ shows `settled`.
-  The API's `myBalance` keeps the raw payer-credit sign (positive = others owe you), so the direction you see is the
-  inverse of the JSON number. Other members' rows use third-person verbs ("owes" / "is owed").
+- Balance display never uses a sign: a third-person verb ("owes" / "is owed", vi: "còn nợ" / "được nhận") sits
+  beside an unsigned amount, coloured `--owe` / `--owed`, and |balance| < 1000 ₫ shows `settled`. Your own row is
+  marked with a `bạn` / `you` chip beside the name rather than a second-person sentence, so every row scans the
+  same way. The API's `myBalance` keeps the raw payer-credit sign (positive = others owe you), so the direction you
+  see is the inverse of the JSON number.
 - Bill cards: a 2px left edge in `--owed` when you paid, `--owe` when you are involved but did not pay, plain otherwise.
   The amount sits top right with the per-person price directly under it (`33.334 ₫ each`, or
   `100.000 ₫–200.000 ₫` when the split is uneven).
-  The card itself opens Details (a row per involved person with their weight and exact share, images, payer); the pencil
-  beside the description opens the editor, which also holds Delete. Payment cards work the same way.
+  The card itself opens Details (a row per involved person with their weight, exact share and the `you` chip on your
+  own row, images, payer); the pencil beside the description opens the editor, which also holds Delete. Payment cards
+  work the same way.
 - Folds: bills you are neither in nor paying for, payments between two other people, settle-up transfers that are not
   yours, and balances already settled all render inside a closed `<details>` naming their count. They stay in order,
   so opening one restores the unfiltered list.

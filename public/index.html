@@ -382,10 +382,13 @@ async function viewGroup(id) {
   function balanceRow(b) {
     const settled = Math.abs(b.balance) < settledThreshold;
     const owes = b.balance < 0;
-    // your own row speaks in the second person; everyone else's in the third
-    const verb = b.email === me ? (owes ? "balance.owe" : "balance.owed") : (owes ? "balance.owes" : "balance.owedTo");
+    // the verb is third person for everyone: your row is identified by the tag beside the name, not by a
+    // different sentence, so the amounts line up and scan the same way
+    const verb = owes ? "balance.owes" : "balance.owedTo";
     return `<div class="balance-row">
-          <button type="button" class="btn btn-quiet" style="justify-self:start;min-height:32px;padding:0" data-qr="${esc(b.email)}">${esc(b.name)}</button>
+          <button type="button" class="btn btn-quiet" style="justify-self:start;min-height:32px;padding:0" data-qr="${esc(b.email)}">${esc(b.name)}${
+            b.email === me ? ` <span class="chip">${esc(t("members.you"))}</span>` : ""
+          }</button>
           <span class="row" style="justify-content:flex-end;gap:var(--sp-2)">
             <span class="muted">${esc(t("group.spent", { amount: vnd(b.spent ?? 0) }))}</span>
             ${settled ? "" : `<span class="muted">${esc(t(verb))}</span>`}
@@ -900,7 +903,9 @@ async function viewGroup(id) {
         const rows = b.participants.map((p) => {
           const w = b.weights?.[p];
           const share = b.shares?.[p];
-          return `<li class="share-row"><span>${esc(who(p))}${w && w !== 1 ? ` <span class="chip">×${esc(w)}</span>` : ""}</span>${
+          return `<li class="share-row"><span>${esc(who(p))}${w && w !== 1 ? ` <span class="chip">×${esc(w)}</span>` : ""}${
+            p === me ? ` <span class="chip">${esc(t("members.you"))}</span>` : ""
+          }</span>${
             share === undefined ? "" : `<span class="money">${vnd(share)}</span>`
           }</li>`;
         }).join("");
