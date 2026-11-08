@@ -85,24 +85,17 @@ async function membersOf(env: Env, groupId: string) {
   )
     .bind(groupId)
     .all<{ email: string; name: string; qr: string | null; bank: string | null; account: string | null }>();
-  return results.map((m) => ({ ...m, qr: personQr(m, m.name) }));
+  return results.map((m) => ({ ...m, qr: qrUrl(m.qr) }));
 }
 
 // R2 layout: `qrs/<email>`, `<kind>/<group-id>/<entry-id>`. Every key is produced here and nowhere else.
 const qrKey = (email: string) => `qrs/${email}`;
 const qrUrl = (key: string | null) => (key ? `/img/${key}` : null);
-// A stored account renders its own QR instead of storing an image: no upload, nothing to go stale, and the same
-// code the settle-up screen mints. A screenshot remains the fallback for anyone who has not set a bank.
-function personQr(row: { qr: string | null; bank: string | null; account: string | null }, name: string) {
-  if (!row.bank || !row.account) return qrUrl(row.qr);
-  const q = new URLSearchParams({ accountName: name });
-  return `https://img.vietqr.io/image/${encodeURIComponent(row.bank)}-${encodeURIComponent(row.account)}-print.png?${q}`;
-}
 
 const meOut = (email: string, row: { name: string; qr: string | null; bank: string | null; account: string | null } | null) => ({
   email,
   name: row?.name ?? email,
-  qr: personQr({ qr: row?.qr ?? null, bank: row?.bank ?? null, account: row?.account ?? null }, row?.name ?? email),
+  qr: qrUrl(row?.qr ?? null),
   bank: row?.bank ?? null,
   account: row?.account ?? null,
 });

@@ -140,14 +140,15 @@ alone at weight 1. Errors are `{error}` with `400` (invalid input),
   name, fetched once from `/cdn-cgi/access/get-identity` (the app JWT has no name claim) and stored; an email-valued
   row is re-defaulted on the next visit. Override with `PATCH /api/me {"name"}` (the nav name). Email stays the credential.
 - `users.bank` + `users.account` (VietQR bank code and account number) are what build a settle-up QR: quick pay
-  renders `img.vietqr.io/image/<bank>-<account>-print.png?amount&addInfo&accountName` with the transfer amount and a
-  memo (`<group> · settle up`), and offers a `dl.vietqr.io/pay?app=…` button that opens the payer's bank app with the
-  form filled in. Both come from Casso's public API (`/v2/banks`, `/v2/android-app-deeplinks`), fetched by the client
-  and cached in `localStorage` for a day; with no bank/account the payee's uploaded QR image is shown instead.
-  Either field left blank clears both, since half a pair cannot form a code. Uploading a QR screenshot reads its
-  EMVCo payload (`BarcodeDetector`, so Chrome/Android and iOS 17+) and fills both fields, so the account is stored
-  rather than a picture; the profile preview and `PATCH /api/me`'s `qr` then show the derived code. A database
-  created before the fields existed needs, once by hand:
+  renders `img.vietqr.io/image/<bank>-<account>-print.png?amount` — the amount and nothing else, no memo and no
+  holder name — and offers a `dl.vietqr.io/pay?app=…` button that opens the payer's own bank app (preselected from
+  their profile, switchable) with the transfer filled in. Both come from Casso's public API (`/v2/banks`,
+  `/v2/android-app-deeplinks`), fetched by the client and cached in `localStorage` for a day. The bank is chosen from
+  a searchable list, never typed, so no invented bank code can be stored; either field left blank clears both, since
+  half a pair cannot form a code. The payee's uploaded QR image is only a fallback: it is shown when no account is
+  stored, or when VietQR fails to render the generated code. Uploading a QR screenshot reads its EMVCo payload
+  (`BarcodeDetector`, so Chrome/Android and iOS 17+) and fills both fields. A database created before the fields
+  existed needs, once by hand:
 
   ```sql
   ALTER TABLE users ADD COLUMN bank TEXT;
@@ -204,9 +205,9 @@ alone at weight 1. Errors are `{error}` with `400` (invalid input),
 - Quick pay: each settle-up row carries a button at its right — Pay when you are the payer, Confirm when someone owes
   you. It shows the payee's QR and the exact amount, then Done writes one payment row and repaints. The transfer is
   `from -> to` either way, so confirming has the same effect as recording it yourself. When the payee has a bank
-  account stored, the code is a VietQR carrying the amount and a `<group> · settle up` memo, and the payer gets an
-  "Open banking app" button that hands the same transfer to their bank's own app; the uploaded screenshot is the
-  fallback.
+  account stored, the code is a VietQR carrying the exact amount (nothing else), and the payer gets an "Open banking
+  app" button that hands the same transfer to their own bank's app. The payee's uploaded screenshot is only used when
+  no account is stored or VietQR fails to render.
 - Summary: each bill adds `amount` to the payer and subtracts that person's weighted share from each participant
   (leftover đồng go one each to the heaviest weights, then declaration order, so the shares sum to the amount);
   payments shift balances; greedy min-cash-flow produces the transfer list. Each balance row also shows `spent`: the sum

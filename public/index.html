@@ -77,7 +77,9 @@
     <div class="dialog-head"><h2 id="profile-title"></h2>
       <button type="button" class="btn btn-quiet" data-close="profile-dialog"></button></div>
     <label><span id="profile-name-label"></span><input name="name" maxlength="60" data-autofocus required></label>
-    <label><span id="profile-bank-label"></span><input name="bank" list="bank-list" autocomplete="off" maxlength="20" placeholder="VCB"><datalist id="bank-list"></datalist></label>
+    <div class="picker" id="bank-picker">
+      <span id="profile-bank-label"></span>
+    </div>
     <label><span id="profile-account-label"></span><input name="account" inputmode="numeric" autocomplete="off" maxlength="40"></label>
     <p class="muted" id="profile-bank-hint"></p>
     <div class="stack">
@@ -311,45 +313,146 @@ async function parseQrFile(file, list) {
   }
 }
 
-// A memo the bank and the QR agree on: NAPAS caps the transfer content at 25 characters, so cap it here rather
-// than let the image and the deeplink truncate differently.
-const memoOf = (s) => String(s).replace(/\s+/g, " ").trim().slice(0, 25);
 // The bank list arrives after the dialog opens; a newer open must not have an older fetch write into it.
 let quickpayNonce = 0;
-// The one place the client builds a VietQR image URL. A settle-up adds the amount and memo; the profile preview
-// leaves them out, which is the same code the server derives for `members[].qr`.
-const vietQr = (bank, account, name, amount, memo) =>
-  `${VIETQR_IMG}${encodeURIComponent(bank)}-${encodeURIComponent(account)}-print.png?${
-    new URLSearchParams({ ...(amount ? { amount: String(amount), addInfo: memo } : {}), accountName: name || "" })}`;
+// The code carries nothing but the account and the amount: no memo and no account holder, both of which the
+// payer would otherwise have to read past to check the number.
+const vietQr = (bank, account, amount) =>
+  `${VIETQR_IMG}${encodeURIComponent(bank)}-${encodeURIComponent(account)}-print.png${
+    amount ? `?${new URLSearchParams({ amount: String(amount) })}` : ""}`;
 // `app` is the app that opens — the payer's own bank, since the money leaves their account; `ba` names the
 // beneficiary's account and their bank's app id. Casso's redirect fills the form and hands the app its own scheme.
-const bankAppUrl = ({ app, account, bankApp, name }, amount, memo) =>
+const bankAppUrl = ({ app, account, bankApp }, amount) =>
   `https://dl.vietqr.io/pay?${new URLSearchParams({
-    app, ba: `${account}@${bankApp}`, am: String(amount), tn: memo, bn: name, url: location.origin,
+    app, ba: `${account}@${bankApp}`, am: String(amount), url: location.origin,
   })}`;
+
+/* ---------- bank picker ---------- */
+// One searchable bank picker, used by the profile and by quick pay: the value is only ever a code from the list,
+// and the button always shows the bank's name, never its code. There is no free-text bank anywhere.
+// `pool` narrows the choices (quick pay only offers banks that have an app); an empty value is allowed.
+function bankPicker(root, { onPick, pool, ariaLabel } = {}) {
+  const choices = () => (pool ? pool() : banks) ?? [];
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "picker-btn";
+  btn.setAttribute("aria-haspopup", "listbox");
+  btn.setAttribute("aria-expanded", "false");
+  const pop = document.createElement("div");
+  pop.className = "picker-pop hidden";
+  pop.innerHTML = `<input type="search" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="true">
+    <ul class="picker-list" role="listbox"></ul>`;
+  root.append(btn, pop);
+  const search = pop.querySelector("input");
+  const list = pop.querySelector("ul");
+  let value = "";
+  let active = 0;
+  let hits = [];
+
+  const setAria = () => {
+    const label = ariaLabel ? t(ariaLabel) : "";
+    if (label) {
+      btn.setAttribute("aria-label", label);
+      search.setAttribute("aria-label", t("profile.searchBank"));
+    }
+  };
+
+  const paint = () => {
+    const all = choices();
+    const seen = all.find((x) => x.code === value);
+    btn.innerHTML = seen
+      ? esc(seen.name)
+      : `<span data-empty>${esc(t(all.length ? "profile.chooseBank" : "profile.bankUnavailable"))}</span>`;
+    btn.disabled = !all.length;
+    list.innerHTML = hits.length
+      ? hits.map((x, i) => `<li role="option" data-code="${esc(x.code)}" aria-selected="${x.code === value}" data-active="${i === active}">${esc(x.name)}</li>`).join("")
+      : `<li class="picker-empty">${esc(t("profile.noBankMatch"))}</li>`;
+    const on = list.querySelector('[data-active="true"]');
+    if (on) on.scrollIntoView({ block: "nearest" });
+  };
+
+  const filter = (q) => {
+    const needle = q.trim().toLowerCase();
+    hits = choices().filter((b) => !needle || b.code.toLowerCase().includes(needle) || b.name.toLowerCase().includes(needle));
+    active = 0;
+    paint();
+  };
+
+  const open = (show) => {
+    pop.classList.toggle("hidden", !show);
+    btn.setAttribute("aria-expanded", String(show));
+    if (!show) return;
+    filter("");
+    search.value = "";
+    search.placeholder = t("profile.searchBank");
+    search.focus();
+  };
+
+  const pick = (code) => {
+    value = choices().some((b) => b.code === code) ? code : "";
+    active = Math.max(0, choices().findIndex((b) => b.code === value));
+    filter("");
+    open(false);
+    paint();
+    onPick?.(value);
+  };
+
+  btn.onclick = () => open(pop.classList.contains("hidden"));
+  search.oninput = () => filter(search.value);
+  pop.onclick = (e) => {
+    const li = e.target.closest("li[data-code]");
+    if (li) pick(li.dataset.code);
+  };
+  search.onkeydown = (e) => {
+    if (e.key === "Escape") { e.preventDefault(); open(false); return; }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (hits[active]) pick(hits[active].code);
+      return;
+    }
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+    e.preventDefault();
+    if (!hits.length) return;
+    active = (active + (e.key === "ArrowDown" ? 1 : hits.length - 1)) % hits.length;
+    paint();
+  };
+  document.addEventListener("pointerdown", (e) => {
+    if (!pop.classList.contains("hidden") && !root.contains(e.target)) open(false);
+  });
+
+  setAria();
+  paint();
+  return {
+    // The list loads asynchronously; `refresh` re-paints once it is in, without inventing a selection.
+    refresh() { filter(""); },
+    set(code) { pick(code); return value; },
+    get value() { return value; },
+  };
+}
+
+let profileBank;
 
 async function openProfile() {
   const me = await api("/api/me").catch(() => null);
-  // `meQr` tracks the uploaded screenshot only; a derived code comes from bank+account and must not carry a remove
-  // button, or clearing the bank would leave a generated URL behind as if it were an image.
-  meQr = me?.bank && me?.account ? null : (me?.qr ?? null);
+  // `meQr` is the uploaded screenshot and stays the fallback; a stored account owns the QR that is shown.
+  meQr = me?.qr ?? null;
   const dlg = $("#profile-dialog");
   dlg.querySelector("[name=name]").value = me?.name ?? "";
-  dlg.querySelector("[name=bank]").value = me?.bank ?? "";
   dlg.querySelector("[name=account]").value = me?.account ?? "";
-  loadBanks().then((list) => {
-    $("#bank-list").innerHTML = list.map((b) => `<option value="${esc(b.code)}">${esc(b.name)}</option>`).join("");
-  });
-  drawQr(me?.bank, me?.account, me?.name);
+  drawQr(me?.bank, me?.account);
   dlg.showModal();
   autofocusIn(dlg);
+  loadBanks().then((list) => {
+    banks = list;
+    profileBank.set(me?.bank ?? "");
+    profileBank.refresh();
+  });
 }
 
-// The preview is the code a settle-up would show: a stored account renders its own QR, an uploaded screenshot is
-// the fallback. Both are editable in place, so the file input only has to keep them in step.
-function drawQr(bank, account, name) {
+// The preview shows the code a settle-up would use, which is why it takes no memo or holder name either.
+function drawQr(bank, account) {
   const box = $("#qr-preview");
-  const generated = bank && account ? vietQr(bank, account, name) : null;
+  const generated = bank && account ? vietQr(bank, account, "") : null;
   const src = generated ?? meQr;
   box.innerHTML = src
     ? `<figure><img src="${esc(src)}" alt="">${
@@ -363,10 +466,10 @@ async function readQrFields(file) {
   const list = await loadBanks();
   const hit = await parseQrFile(file, list);
   if (!hit) return;
+  profileBank.set(hit.bank);
   const dlg = $("#profile-dialog");
-  dlg.querySelector("[name=bank]").value = hit.bank;
   dlg.querySelector("[name=account]").value = hit.account;
-  drawQr(hit.bank, hit.account, dlg.querySelector("[name=name]").value.trim());
+  drawQr(hit.bank, hit.account);
 }
 
 /* ---------- money ---------- */
@@ -940,42 +1043,65 @@ async function viewGroup(id) {
     const payee = members.find((x) => x.email === to);
     if (!payer || !payee) return;
     const iAmPayer = from === me;
-    // The transfer names the group, so a bank statement line says what it settled.
-    const memo = memoOf(t("quickpay.memo", { group: group.name }));
     const minted = payee.bank && payee.account;
     $("#quickpay-title").textContent = iAmPayer
       ? t("quickpay.title", { name: payee.name })
       : t("quickpay.receiveTitle", { name: payer.name });
     $("#quickpay-amount").textContent = vnd(amount);
-    // A stored account beats an uploaded screenshot: the code already carries this exact amount and memo.
-    $("#quickpay-qr").innerHTML = minted
-      ? `<img class="qr-img" src="${esc(vietQr(payee.bank, payee.account, payee.name, amount, memo))}" alt="">`
-      : payee.qr
-        ? `<img class="qr-img" src="${esc(payee.qr)}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('p'),{className:'muted',textContent:'${esc(t("common.noQr"))}'}))">`
-        : `<p class="muted">${esc(iAmPayer ? t("common.noQr") : t("quickpay.noQrSelf"))}</p>`;
+    // The amount is the only thing the code adds: no memo, no holder name — the payer reads the number and sends it.
+    // A stored account always wins over an uploaded screenshot; that image is only shown if VietQR cannot draw
+    // this code, which is the one case it is still useful.
+    const box = $("#quickpay-qr");
+    const noQr = () => {
+      box.innerHTML = `<p class="muted">${esc(iAmPayer ? t("common.noQr") : t("quickpay.noQrSelf"))}</p>`;
+    };
+    const manual = () => {
+      if (!payee.qr) return noQr();
+      const img = new Image();
+      img.className = "qr-img";
+      img.alt = "";
+      img.onerror = noQr;
+      img.src = payee.qr;
+      box.replaceChildren(img);
+    };
+    if (!minted) manual();
+    else {
+      const img = new Image();
+      img.className = "qr-img";
+      img.alt = "";
+      img.onerror = manual;
+      img.src = vietQr(payee.bank, payee.account, amount);
+      box.replaceChildren(img);
+    }
     // The app that must open is the payer's own bank, since the money leaves their account; the beneficiary is
-    // the payee. Their profile bank is the default choice, and the bank list is the only place to change it.
-    // Confirming as the payee has nothing to open — they scan, they do not pay.
+    // the payee. The same picker as the profile shows bank names, and only lists banks with an app — so a code that
+    // cannot open is never offered, and nothing is preselected unless it is the payer's own stored bank.
+    // Confirming as the payee has nothing to open either: they scan, they do not pay.
     const appBox = $("#quickpay-app");
     appBox.innerHTML = "";
     if (iAmPayer && minted) {
       const nonce = ++quickpayNonce;
       loadBanks().then((list) => {
         if (nonce !== quickpayNonce) return;
-        const withApp = (code) => list.find((b) => b.app && b.code.toUpperCase() === String(code || "").toUpperCase());
-        const theirs = withApp(payee.bank);
+        const theirs = list.find((b) => b.app && b.code.toUpperCase() === String(payee.bank).toUpperCase());
         if (!theirs) return; // the payee's bank has no deeplink: scanning is the only route
-        const choices = list.filter((b) => b.app);
-        const start = withApp(payer.bank) ?? choices.find((b) => b.app === "mb") ?? choices[0];
-        const href = (b) => bankAppUrl({ app: b.app, account: payee.account, bankApp: theirs.app, name: payee.name }, amount, memo);
-        appBox.innerHTML = `<select id="quickpay-bank" aria-label="${esc(t("quickpay.pickBank"))}">${
-          choices.map((b) => `<option value="${esc(b.code)}"${b === start ? " selected" : ""}>${esc(b.name)}</option>`).join("")
-        }</select><a class="btn btn-primary" href="${esc(href(start))}">${esc(t("quickpay.openApp"))}</a>`;
-        const sel = appBox.querySelector("select");
-        sel.onchange = () => {
-          const b = withApp(sel.value);
-          if (b) appBox.querySelector("a").href = href(b);
+        const mine = list.find((b) => b.app && b.code.toUpperCase() === String(payer.bank).toUpperCase());
+        const wrap = document.createElement("div");
+        wrap.className = "picker";
+        const go = document.createElement("a");
+        go.className = "btn btn-primary";
+        go.textContent = t("quickpay.openApp");
+        appBox.append(wrap, go);
+        const href = (b) => bankAppUrl({ app: b.app, account: payee.account, bankApp: theirs.app }, amount);
+        const setHref = (code) => {
+          const b = list.find((x) => x.app && x.code === code);
+          go.classList.toggle("hidden", !b);
+          if (b) go.href = href(b);
         };
+        const picker = bankPicker(wrap, { pool: () => list.filter((b) => b.app), onPick: setHref, ariaLabel: "quickpay.pickBank" });
+        // The payer's own bank, if it can open a link — otherwise the button stays hidden until they choose one.
+        picker.set(mine?.code ?? "");
+        setHref(picker.value);
       });
     }
     $("#quickpay-hint").textContent = t(iAmPayer ? "quickpay.hint" : "quickpay.receiveHint");
@@ -1254,13 +1380,13 @@ $("#profile-form").onsubmit = async (e) => {
     const name = f.elements.name.value.trim();
     if (!name) return alert(t("error.name"));
     const file = f.elements.qr.files[0];
-    // A screenshot is the fallback, not the record: reading it first pre-fills the two fields, so a person who
-    // uploads their bank QR ends up with the account stored and a generated code, not a picture.
+    // A screenshot is the fallback, not the record: reading it first fills the account, so a person who uploads
+    // their bank QR ends up with the account stored and a generated code, not a picture.
     if (file) await readQrFields(file);
-    const bank = f.elements.bank.value.trim();
+    const bank = profileBank.value;
     const account = f.elements.account.value.trim();
     const saved = await api("/api/me", { method: "PATCH", body: JSON.stringify({ name, bank, account }) });
-    // A generated code needs no upload; a stored image is only kept for someone without an account.
+    // A generated code needs no upload, so any stored image is dropped once an account is set.
     if (bank && account) meQr = null;
     else if (file) {
       const fd = new FormData();
@@ -1276,15 +1402,17 @@ $("#profile-form").onsubmit = async (e) => {
 };
 
 $("#profile-dialog").addEventListener("change", (e) => {
-  const dlg = $("#profile-dialog");
   if (e.target.name === "qr" && e.target.files[0]) {
     readQrFields(e.target.files[0]).catch(() => {});
     return;
   }
-  // Typing the account away must drop the generated preview at once, not only after a save.
-  if (e.target.name === "bank" || e.target.name === "account" || e.target.name === "name") {
-    drawQr(dlg.elements.bank.value.trim(), dlg.elements.account.value.trim(), dlg.elements.name.value.trim());
-  }
+  // Editing the account must drop or refresh the generated preview at once, not only after a save.
+  if (e.target.name === "account") drawQr(profileBank.value, e.target.value.trim());
+});
+
+// The profile picker lives in the static dialog; quick pay builds its own instance per open.
+profileBank = bankPicker($("#bank-picker"), {
+  onPick: (code) => drawQr(code, $("#profile-form").elements.account.value.trim()),
 });
 
 $("#qr-preview").onclick = async (e) => {
@@ -1292,8 +1420,7 @@ $("#qr-preview").onclick = async (e) => {
   try {
     await api("/api/me/qr", { method: "DELETE" });
     meQr = null;
-    const dlg = $("#profile-dialog");
-    drawQr(dlg.elements.bank.value.trim(), dlg.elements.account.value.trim(), dlg.elements.name.value.trim());
+    drawQr(profileBank.value, $("#profile-form").elements.account.value.trim());
   } catch (err) { fail(err); }
 };
 
