@@ -145,7 +145,9 @@ alone at weight 1. Errors are `{error}` with `400` (invalid input),
   their profile, switchable) with the transfer filled in. Both come from Casso's public API (`/v2/banks`,
   `/v2/android-app-deeplinks`), fetched by the client and cached in `localStorage` for a day. The bank is chosen from
   a searchable list, never typed, so no invented bank code can be stored; either field left blank clears both, since
-  half a pair cannot form a code. The payee's uploaded QR image is only a fallback: it is shown when no account is
+  half a pair cannot form a code. The last bank picked is kept in `localStorage` (like `lang` and `scheme`), so the
+  quick-pay picker starts on it when the payer has no stored bank of their own — it is never substituted for a
+  different bank. The payee's uploaded QR image is only a fallback: it is shown when no account is
   stored, or when VietQR fails to render the generated code. Uploading a QR screenshot reads its EMVCo payload
   (`BarcodeDetector`, so Chrome/Android and iOS 17+) and fills both fields. A database created before the fields
   existed needs, once by hand:

@@ -444,6 +444,16 @@ dialog::backdrop { background: var(--scrim); }
   font-size: var(--text-xs); line-height: 1; cursor: pointer;
 }
 
+/* Your payment QR is a code meant to be scanned, so the profile shows it at reading size — the same `.qr-img`
+   bound as the quick-pay and show-QR dialogs — instead of shrinking it into the entry-image thumbnail grid. */
+#qr-preview { display: grid; justify-items: center; gap: var(--sp-2); }
+#qr-preview figure { position: relative; margin: 0; }
+#qr-preview figure > button {
+  position: absolute; top: -8px; right: -8px; width: 28px; height: 28px; padding: 0;
+  border-radius: 50%; border: 1px solid var(--rule-strong); background: var(--surface); color: var(--ink);
+  font-size: var(--text-sm); line-height: 1; cursor: pointer;
+}
+
 /* ---------- schemes / language ---------- */
 .scheme-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: var(--sp-2); }
 .scheme-opt {
@@ -493,4 +503,12 @@ nav { flex-wrap: nowrap; }
   .page-head--group { flex-direction: column; align-items: stretch; gap: var(--sp-3); }
   .page-head--group .head-actions { justify-content: flex-start; }
   .page-head--group .head-actions .btn { flex: 0 1 auto; }
+
+  /* A thumb needs 44px, and iOS zooms the page when a focused field is under 16px — the search box is the field
+     you land in, so both sizes go up here rather than only on the button. */
+  .picker-btn { min-height: 44px; font-size: var(--text-md); padding-inline: var(--sp-4); }
+  .picker-pop { padding: var(--sp-3); }
+  .picker-pop input[type="search"] { min-height: 44px; font-size: var(--text-md); }
+  .picker-list { max-height: 50vh; }
+  .picker-list li { padding: var(--sp-3); font-size: var(--text-md); }
 }

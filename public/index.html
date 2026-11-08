@@ -84,7 +84,7 @@
     <p class="muted" id="profile-bank-hint"></p>
     <div class="stack">
       <span class="muted" id="profile-qr-label"></span>
-      <div class="thumbs" id="qr-preview"></div>
+      <div id="qr-preview"></div>
     </div>
     <label><span id="profile-replace-label"></span><input name="qr" type="file" accept="image/*"></label>
     <p class="muted" id="profile-hint"></p>
@@ -391,6 +391,9 @@ function bankPicker(root, { onPick, pool, ariaLabel } = {}) {
   const pick = (code) => {
     value = choices().some((b) => b.code === code) ? code : "";
     active = Math.max(0, choices().findIndex((b) => b.code === value));
+    // Remembered like the scheme and language: the quick-pay picker has no stored bank of its own, so this is what
+    // lets it start on the bank the person opened last time.
+    if (value) localStorage.setItem("bank", value);
     filter("");
     open(false);
     paint();
@@ -455,7 +458,7 @@ function drawQr(bank, account) {
   const generated = bank && account ? vietQr(bank, account, "") : null;
   const src = generated ?? meQr;
   box.innerHTML = src
-    ? `<figure><img src="${esc(src)}" alt="">${
+    ? `<figure><img class="qr-img" src="${esc(src)}" alt="">${
       generated ? "" : `<button type="button" data-drop-qr="1" title="${esc(t("common.remove"))}">×</button>`}</figure>`
     : `<span class="muted">${esc(t("profile.noQr"))}</span>`;
 }
@@ -886,7 +889,7 @@ async function viewGroup(id) {
     const dlg = $("#qr-dialog");
     $("#qr-title").textContent = m.name;
     $("#qr-view").innerHTML = m.qr
-      ? `<img src="${esc(m.qr)}" alt="" style="border-radius:var(--r-sm);border:1px solid var(--rule)">`
+      ? `<img class="qr-img" src="${esc(m.qr)}" alt="">`
       : `<span class="muted">${esc(t("common.noQr"))}</span>`;
     dlg.showModal();
   autofocusIn(dlg);
@@ -1099,8 +1102,9 @@ async function viewGroup(id) {
           if (b) go.href = href(b);
         };
         const picker = bankPicker(wrap, { pool: () => list.filter((b) => b.app), onPick: setHref, ariaLabel: "quickpay.pickBank" });
-        // The payer's own bank, if it can open a link — otherwise the button stays hidden until they choose one.
-        picker.set(mine?.code ?? "");
+        // Their stored bank first; otherwise the one they opened for a quick pay last time. `set` blanks a code
+        // that is no longer in the list, so a bank that lost its app just leaves the choice empty.
+        picker.set(mine?.code || localStorage.getItem("bank") || "");
         setHref(picker.value);
       });
     }
