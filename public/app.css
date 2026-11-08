@@ -249,8 +249,10 @@ a.ledger-row:hover { background: var(--surface); }
 
 .card-meta { display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); color: var(--muted); font-size: var(--text-sm); }
 
-/* A fold hides rows that are not about you: one quiet line naming the count, the same rule as a row. */
-.fold { border-top: 1px solid var(--rule); margin-top: var(--sp-2); }
+/* A fold hides rows that are not about you: one quiet line naming the count, the same rule as a row.
+   Under balance rows the row above already ends with a rule, so the fold adds none of its own. */
+.fold { margin-top: var(--sp-2); border-top: 1px solid var(--rule); padding-top: 0; }
+.balances > .fold { margin-top: 0; border-top: 0; }
 .fold > summary {
   display: flex; align-items: center; gap: var(--sp-2);
   padding: var(--sp-2) 0; cursor: pointer; list-style: none;
@@ -262,8 +264,16 @@ a.ledger-row:hover { background: var(--surface); }
 .fold > summary:hover { color: var(--ink); }
 .fold[open] > summary { margin-bottom: var(--sp-2); }
 
-.share-list { display: grid; gap: var(--sp-1); margin-top: var(--sp-1); }
-.share-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-3); }
+/* A dotted marker and a hairline between people: the eye tracks the money column down a list, not across
+   one paragraph of names. */
+.share-list { display: grid; gap: 0; margin: var(--sp-1) 0 0; padding: 0; list-style: none; }
+.share-row {
+  display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-3);
+  padding: var(--sp-1) 0 var(--sp-1) var(--sp-4); position: relative;
+  border-bottom: 1px dotted var(--rule);
+}
+.share-row:last-child { border-bottom: 0; }
+.share-row::before { content: "•"; position: absolute; left: 0; color: var(--muted); }
 
 /* the two personal states, told by a 2px left edge only */
 .card--paid { box-shadow: inset 2px 0 0 var(--owed); }

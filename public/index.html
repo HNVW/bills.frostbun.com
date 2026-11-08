@@ -894,14 +894,14 @@ async function viewGroup(id) {
         const rows = b.participants.map((p) => {
           const w = b.weights?.[p];
           const share = b.shares?.[p];
-          return `<div class="share-row"><span>${esc(who(p))}${w && w !== 1 ? ` <span class="chip">×${esc(w)}</span>` : ""}</span>${
+          return `<li class="share-row"><span>${esc(who(p))}${w && w !== 1 ? ` <span class="chip">×${esc(w)}</span>` : ""}</span>${
             share === undefined ? "" : `<span class="money">${vnd(share)}</span>`
-          }</div>`;
+          }</li>`;
         }).join("");
         showDetails(b.title || t("detail.title"), [
           `${esc(t("detail.amount"))}: <span class="money">${vnd(b.amount)}</span>`,
           `${esc(t("detail.paidBy"))}: ${esc(who(b.paidBy))}`,
-          `<div>${esc(t("detail.involved", { count: b.participants.length }))}</div><div class="share-list">${rows}</div>`,
+          `<div>${esc(t("detail.involved", { count: b.participants.length }))}</div><ul class="share-list">${rows}</ul>`,
           `<span class="muted">${esc(dateTime(b.createdAt))}</span>`,
         ], b.image);
       } else if (d.detailsPay) {
