@@ -206,6 +206,7 @@ a.ledger-row:hover { background: var(--surface); }
 .ledger-row > .note { grid-column: 1 / -1; color: var(--muted); font-size: var(--text-sm); }
 
 .summary { display: grid; gap: var(--sp-4); padding: var(--sp-4); background: var(--surface); border: 1px solid var(--rule); border-radius: var(--r-md); }
+.summary + .summary { margin-top: var(--sp-4); }
 .summary-total { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-4); }
 .summary-total .amount { font-size: var(--text-xl); font-weight: 600; font-variant-numeric: tabular-nums; }
 .balances { display: grid; gap: 0; border-top: 1px solid var(--rule); }

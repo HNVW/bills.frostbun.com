@@ -414,7 +414,7 @@ async function viewGroup(id) {
           </div>`;
     const mine = settlements.filter((s) => s.from === me || s.to === me);
     const others = settlements.filter((s) => s.from !== me && s.to !== me);
-    return `<div class="settlements"><h3>${esc(t("group.settleUp"))}</h3>${mine.map(row).join("")}${
+    return `<div class="settlements">${mine.map(row).join("")}${
       others.length ? fold(t("group.otherTransfers", { count: others.length }), others.map(row).join("")) : ""}</div>`;
   }
 
@@ -449,6 +449,10 @@ async function viewGroup(id) {
         <span class="amount num">${vnd(summary.totalSpent)}</span>
       </div>
       <div class="balances">${balancesBlock(summary.balances)}</div>
+    </section>
+
+    <section class="summary" aria-labelledby="settle-title">
+      <h2 id="settle-title">${esc(t("group.settleUp"))}</h2>
       ${settlementBlock(summary.settlements)}
     </section>
 
