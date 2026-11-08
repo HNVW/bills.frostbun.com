@@ -172,11 +172,13 @@ label { display: grid; gap: var(--sp-1); font-size: var(--text-sm); font-weight:
 /* Bank picker: a button that opens a searchable list. The value lives in a hidden input, so there is never a
    half-typed bank code to validate — only a choice from the list can be stored. */
 .picker { display: grid; gap: var(--sp-1); font-size: var(--text-sm); font-weight: 500; color: var(--ink-2); position: relative; }
+/* The picker is a control you read and aim at, not a field you type in, so it is a step larger than the inputs
+   beside it: 44px and 16px at every width, which also clears the tap target and iOS's focus-zoom threshold. */
 .picker-btn {
   display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2);
-  width: 100%; min-height: 38px; padding: 0 var(--sp-3);
+  width: 100%; min-height: 44px; padding: 0 var(--sp-4);
   border: 1px solid var(--field-edge); border-radius: var(--r-field);
-  background: var(--sunken); color: var(--ink); font: inherit; font-size: var(--text-sm); font-weight: 400;
+  background: var(--sunken); color: var(--ink); font: inherit; font-size: var(--text-md); font-weight: 400;
   text-align: left; cursor: pointer;
 }
 .picker-btn:hover { border-color: var(--ink); }
@@ -454,6 +456,11 @@ dialog::backdrop { background: var(--scrim); }
   font-size: var(--text-sm); line-height: 1; cursor: pointer;
 }
 
+/* The bank picker and the button that opens the app are two separate decisions, so they get two lines: a
+   button sharing a row with a picker squeezes the picker to whatever width is left, which is what made it small. */
+#quickpay-app { display: grid; gap: var(--sp-2); }
+#quickpay-app > .btn { width: 100%; min-height: 40px; }
+
 /* ---------- schemes / language ---------- */
 .scheme-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: var(--sp-2); }
 .scheme-opt {
@@ -504,9 +511,8 @@ nav { flex-wrap: nowrap; }
   .page-head--group .head-actions { justify-content: flex-start; }
   .page-head--group .head-actions .btn { flex: 0 1 auto; }
 
-  /* A thumb needs 44px, and iOS zooms the page when a focused field is under 16px — the search box is the field
-     you land in, so both sizes go up here rather than only on the button. */
-  .picker-btn { min-height: 44px; font-size: var(--text-md); padding-inline: var(--sp-4); }
+  /* The popup is the part that scales with the screen: the button is already 44px and 16px at every width, while
+     the list needs room for a thumb and the search field is the one you land in. */
   .picker-pop { padding: var(--sp-3); }
   .picker-pop input[type="search"] { min-height: 44px; font-size: var(--text-md); }
   .picker-list { max-height: 50vh; }
