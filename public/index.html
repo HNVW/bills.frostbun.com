@@ -254,6 +254,14 @@ async function paintNotify() {
 /* ---------- profile ---------- */
 
 let meQr = null;
+// A file picked but not yet saved is previewed from an object URL; the previous one is revoked so switching files
+// does not leak a blob for the life of the page.
+let previewUrl = null;
+function setPreview(file) {
+  if (previewUrl) URL.revokeObjectURL(previewUrl);
+  previewUrl = file ? URL.createObjectURL(file) : null;
+  meQr = previewUrl;
+}
 
 // VietQR (Casso) mints a QR from a bank code, an account and the amount; the extra fields are the transfer
 // memo and the account holder. Its bank list says which banks also have an app deeplink, and both are cached
@@ -452,14 +460,15 @@ async function openProfile() {
   });
 }
 
-// The preview shows the code a settle-up would use, which is why it takes no memo or holder name either.
+// The profile preview shows the uploaded image when there is one, and the generated code only when there is not:
+// an explicit upload is the person's own choice of what others will scan.
 function drawQr(bank, account) {
   const box = $("#qr-preview");
   const generated = bank && account ? vietQr(bank, account, "") : null;
-  const src = generated ?? meQr;
+  const src = meQr ?? generated;
   box.innerHTML = src
     ? `<figure><img class="qr-img" src="${esc(src)}" alt="">${
-      generated ? "" : `<button type="button" data-drop-qr="1" title="${esc(t("common.remove"))}">×</button>`}</figure>`
+      meQr ? `<button type="button" data-drop-qr="1" title="${esc(t("common.remove"))}">×</button>` : ""}</figure>`
     : `<span class="muted">${esc(t("profile.noQr"))}</span>`;
 }
 
@@ -1384,19 +1393,19 @@ $("#profile-form").onsubmit = async (e) => {
     const name = f.elements.name.value.trim();
     if (!name) return alert(t("error.name"));
     const file = f.elements.qr.files[0];
-    // A screenshot is the fallback, not the record: reading it first fills the account, so a person who uploads
-    // their bank QR ends up with the account stored and a generated code, not a picture.
+    // Reading the payload only fills the account fields; the image itself is still the upload that gets stored.
     if (file) await readQrFields(file);
     const bank = profileBank.value;
     const account = f.elements.account.value.trim();
     const saved = await api("/api/me", { method: "PATCH", body: JSON.stringify({ name, bank, account }) });
-    // A generated code needs no upload, so any stored image is dropped once an account is set.
-    if (bank && account) meQr = null;
-    else if (file) {
+    // An upload is kept even when an account is set: the profile shows the image, and only falls back to the
+    // generated code when there is none.
+    if (file) {
       const fd = new FormData();
       fd.append("file", file);
       meQr = (await api("/api/me/qr", { method: "POST", body: fd })).qr;
     } else meQr = saved.qr;
+    setPreview(null);
     meName = name;
     $("#me").textContent = name;
     f.elements.qr.value = "";
@@ -1407,6 +1416,10 @@ $("#profile-form").onsubmit = async (e) => {
 
 $("#profile-dialog").addEventListener("change", (e) => {
   if (e.target.name === "qr" && e.target.files[0]) {
+    // Show the file the moment it is picked: `drawQr` prefers the uploaded image over the generated code, so the
+    // preview matches what saving will store, not a code built from the account fields beside it.
+    setPreview(e.target.files[0]);
+    drawQr(profileBank.value, $("#profile-form").elements.account.value.trim());
     readQrFields(e.target.files[0]).catch(() => {});
     return;
   }
