@@ -149,10 +149,11 @@ alone at weight 1. Errors are `{error}` with `400` (invalid input),
   quick-pay picker starts on it, then on the payer's own stored bank, then on nothing; each step must be a bank that
   can actually open, so a stale or unsupported code falls through instead of being substituted for another bank.
   The payee's uploaded QR image is only a fallback in quick pay: it is shown when no account is
-  stored, or when VietQR fails to render the generated code; in the profile the uploaded image takes precedence, and
-  the generated code appears only while no image is set. Uploading a QR screenshot reads its EMVCo payload
-  (`BarcodeDetector`, so Chrome/Android and iOS 17+) and fills both fields. A database created before the fields
-  existed needs, once by hand:
+  stored, or when VietQR fails to render the generated code; in the profile and the member QR dialog the uploaded
+  image takes precedence, and the generated code appears only while no image is set. Uploading a QR screenshot reads
+  its EMVCo payload (`BarcodeDetector`, so Chrome/Android and iOS 17+) and fills the bank and account, but only while
+  both are unset — a bank the person picked is a deliberate choice an old screenshot must not overwrite. A database
+  created before the fields existed needs, once by hand:
 
   ```sql
   ALTER TABLE users ADD COLUMN bank TEXT;

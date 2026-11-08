@@ -473,13 +473,15 @@ function drawQr(bank, account) {
 }
 
 // Reading the screenshot's own payload fills the two fields, so the person does not retype numbers they already
-// sent themselves. Off, or unreadable, leaves them as typed.
+// sent themselves. Only when both are unset: a bank and account they typed (or picked) are a deliberate choice, and
+// an old screenshot must not quietly replace it. Unreadable, or no decoder, leaves them as typed.
 async function readQrFields(file) {
+  const dlg = $("#profile-dialog");
+  if (profileBank.value || dlg.querySelector("[name=account]").value.trim()) return;
   const list = await loadBanks();
   const hit = await parseQrFile(file, list);
   if (!hit) return;
   profileBank.set(hit.bank);
-  const dlg = $("#profile-dialog");
   dlg.querySelector("[name=account]").value = hit.account;
   drawQr(hit.bank, hit.account);
 }
@@ -892,13 +894,16 @@ async function viewGroup(id) {
     } catch (err) { fail(err); }
   };
 
-  // A missing QR renders as a note, never a broken image.
+  // A member's code is their uploaded image, or else the one built from their account — the same precedence as the
+  // profile — so a member who set only a bank and account is not shown as having no QR. A missing QR is a note,
+  // never a broken image.
   function showQr(m) {
     if (!m) return;
     const dlg = $("#qr-dialog");
+    const generated = m.bank && m.account ? vietQr(m.bank, m.account, "") : null;
     $("#qr-title").textContent = m.name;
-    $("#qr-view").innerHTML = m.qr
-      ? `<img class="qr-img" src="${esc(m.qr)}" alt="">`
+    $("#qr-view").innerHTML = m.qr || generated
+      ? `<img class="qr-img" src="${esc(m.qr ?? generated)}" alt="">`
       : `<span class="muted">${esc(t("common.noQr"))}</span>`;
     dlg.showModal();
   autofocusIn(dlg);
