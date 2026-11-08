@@ -77,6 +77,9 @@
     <div class="dialog-head"><h2 id="profile-title"></h2>
       <button type="button" class="btn btn-quiet" data-close="profile-dialog"></button></div>
     <label><span id="profile-name-label"></span><input name="name" maxlength="60" data-autofocus required></label>
+    <label><span id="profile-bank-label"></span><input name="bank" list="bank-list" autocomplete="off" maxlength="20" placeholder="VCB"><datalist id="bank-list"></datalist></label>
+    <label><span id="profile-account-label"></span><input name="account" inputmode="numeric" autocomplete="off" maxlength="40"></label>
+    <p class="muted" id="profile-bank-hint"></p>
     <div class="stack">
       <span class="muted" id="profile-qr-label"></span>
       <div class="thumbs" id="qr-preview"></div>
@@ -250,21 +253,120 @@ async function paintNotify() {
 
 let meQr = null;
 
+// VietQR (Casso) mints a QR from a bank code, an account and the amount; the extra fields are the transfer
+// memo and the account holder. Its bank list says which banks also have an app deeplink, and both are cached
+// for a day — the profile field stays free text if the list never arrives.
+const VIETQR_IMG = "https://img.vietqr.io/image/";
+let banks = null;
+async function loadBanks() {
+  if (banks) return banks;
+  const cached = JSON.parse(localStorage.getItem("banks2") || "null");
+  if (cached && Date.now() - cached.at < 864e5) return (banks = cached.list);
+  try {
+    const [b, a] = await Promise.all([
+      fetch("https://api.vietqr.io/v2/banks").then((r) => r.json()),
+      fetch("https://api.vietqr.io/v2/android-app-deeplinks").then((r) => r.json()).catch(() => ({})),
+    ]);
+    const apps = new Map((a.apps ?? []).map((x) => [x.appId.toUpperCase(), x.appId]));
+    const list = (b.data ?? []).filter((x) => x.transferSupported).map((x) => ({
+      code: x.code,
+      name: x.shortName,
+      // the deeplink identifies a bank by its app id (`mb`, `icb`, …), not by its bank code
+      app: apps.get(x.code.toUpperCase()) ?? null,
+      // the Napas id inside a QR payload; parsing a screenshot matches on this
+      bin: x.bin,
+    }));
+    localStorage.setItem("banks2", JSON.stringify({ at: Date.now(), list }));
+    return (banks = list);
+  } catch {
+    return (banks = []);
+  }
+}
+
+// An uploaded QR screenshot states the account it was made for. Reading it saves retyping the two numbers, but
+// only the browsers with BarcodeDetector can (Chrome on Android, iOS 17+); elsewhere the fields stay manual.
+// shortcut: no decoder on Firefox and older Safari — add a wasm decoder if that audience matters.
+const tlv = (s) => {
+  const out = {};
+  for (let i = 0; i + 4 <= s.length; ) {
+    const len = Number(s.slice(i + 2, i + 4));
+    if (!Number.isFinite(len)) break;
+    out[s.slice(i, i + 2)] = s.slice(i + 4, i + 4 + len);
+    i += 4 + len;
+  }
+  return out;
+};
+async function parseQrFile(file, list) {
+  if (!("BarcodeDetector" in window)) return null;
+  try {
+    const [code] = await new BarcodeDetector({ formats: ["qr_code"] }).detect(await createImageBitmap(file));
+    // EMVCo: 38 = Napas merchant account info, 38.00 = the AID, 38.01 = its own TLV (00 = bank bin, 01 = account).
+    const napas = tlv(tlv(code?.rawValue ?? "")["38"] ?? "");
+    if (napas["00"] !== "A000000727") return null;
+    const acct = tlv(napas["01"] ?? "");
+    const bank = list.find((b) => b.bin === acct["00"]);
+    return bank && acct["01"] ? { bank: bank.code, account: acct["01"] } : null;
+  } catch {
+    return null;
+  }
+}
+
+// A memo the bank and the QR agree on: NAPAS caps the transfer content at 25 characters, so cap it here rather
+// than let the image and the deeplink truncate differently.
+const memoOf = (s) => String(s).replace(/\s+/g, " ").trim().slice(0, 25);
+// The bank list arrives after the dialog opens; a newer open must not have an older fetch write into it.
+let quickpayNonce = 0;
+// The one place the client builds a VietQR image URL. A settle-up adds the amount and memo; the profile preview
+// leaves them out, which is the same code the server derives for `members[].qr`.
+const vietQr = (bank, account, name, amount, memo) =>
+  `${VIETQR_IMG}${encodeURIComponent(bank)}-${encodeURIComponent(account)}-print.png?${
+    new URLSearchParams({ ...(amount ? { amount: String(amount), addInfo: memo } : {}), accountName: name || "" })}`;
+// `app` is the app that opens — the payer's own bank, since the money leaves their account; `ba` names the
+// beneficiary's account and their bank's app id. Casso's redirect fills the form and hands the app its own scheme.
+const bankAppUrl = ({ app, account, bankApp, name }, amount, memo) =>
+  `https://dl.vietqr.io/pay?${new URLSearchParams({
+    app, ba: `${account}@${bankApp}`, am: String(amount), tn: memo, bn: name, url: location.origin,
+  })}`;
+
 async function openProfile() {
   const me = await api("/api/me").catch(() => null);
-  meQr = me?.qr ?? null;
+  // `meQr` tracks the uploaded screenshot only; a derived code comes from bank+account and must not carry a remove
+  // button, or clearing the bank would leave a generated URL behind as if it were an image.
+  meQr = me?.bank && me?.account ? null : (me?.qr ?? null);
   const dlg = $("#profile-dialog");
   dlg.querySelector("[name=name]").value = me?.name ?? "";
-  drawQr();
+  dlg.querySelector("[name=bank]").value = me?.bank ?? "";
+  dlg.querySelector("[name=account]").value = me?.account ?? "";
+  loadBanks().then((list) => {
+    $("#bank-list").innerHTML = list.map((b) => `<option value="${esc(b.code)}">${esc(b.name)}</option>`).join("");
+  });
+  drawQr(me?.bank, me?.account, me?.name);
   dlg.showModal();
   autofocusIn(dlg);
 }
 
-function drawQr() {
+// The preview is the code a settle-up would show: a stored account renders its own QR, an uploaded screenshot is
+// the fallback. Both are editable in place, so the file input only has to keep them in step.
+function drawQr(bank, account, name) {
   const box = $("#qr-preview");
-  box.innerHTML = meQr
-    ? `<figure><img src="${esc(meQr)}" alt=""><button type="button" data-drop-qr="1" title="${esc(t("common.remove"))}">×</button></figure>`
+  const generated = bank && account ? vietQr(bank, account, name) : null;
+  const src = generated ?? meQr;
+  box.innerHTML = src
+    ? `<figure><img src="${esc(src)}" alt="">${
+      generated ? "" : `<button type="button" data-drop-qr="1" title="${esc(t("common.remove"))}">×</button>`}</figure>`
     : `<span class="muted">${esc(t("profile.noQr"))}</span>`;
+}
+
+// Reading the screenshot's own payload fills the two fields, so the person does not retype numbers they already
+// sent themselves. Off, or unreadable, leaves them as typed.
+async function readQrFields(file) {
+  const list = await loadBanks();
+  const hit = await parseQrFile(file, list);
+  if (!hit) return;
+  const dlg = $("#profile-dialog");
+  dlg.querySelector("[name=bank]").value = hit.bank;
+  dlg.querySelector("[name=account]").value = hit.account;
+  drawQr(hit.bank, hit.account, dlg.querySelector("[name=name]").value.trim());
 }
 
 /* ---------- money ---------- */
@@ -567,6 +669,7 @@ async function viewGroup(id) {
           <span class="amount num" id="quickpay-amount"></span>
         </div>
         <div id="quickpay-qr"></div>
+        <div id="quickpay-app" class="row" style="justify-content:center"></div>
         <p class="muted" id="quickpay-hint"></p>
       </div>
     </dialog>
@@ -837,13 +940,44 @@ async function viewGroup(id) {
     const payee = members.find((x) => x.email === to);
     if (!payer || !payee) return;
     const iAmPayer = from === me;
+    // The transfer names the group, so a bank statement line says what it settled.
+    const memo = memoOf(t("quickpay.memo", { group: group.name }));
+    const minted = payee.bank && payee.account;
     $("#quickpay-title").textContent = iAmPayer
       ? t("quickpay.title", { name: payee.name })
       : t("quickpay.receiveTitle", { name: payer.name });
     $("#quickpay-amount").textContent = vnd(amount);
-    $("#quickpay-qr").innerHTML = payee.qr
-      ? `<img class="qr-img" src="${esc(payee.qr)}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('p'),{className:'muted',textContent:'${esc(t("common.noQr"))}'}))">`
-      : `<p class="muted">${esc(iAmPayer ? t("common.noQr") : t("quickpay.noQrSelf"))}</p>`;
+    // A stored account beats an uploaded screenshot: the code already carries this exact amount and memo.
+    $("#quickpay-qr").innerHTML = minted
+      ? `<img class="qr-img" src="${esc(vietQr(payee.bank, payee.account, payee.name, amount, memo))}" alt="">`
+      : payee.qr
+        ? `<img class="qr-img" src="${esc(payee.qr)}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('p'),{className:'muted',textContent:'${esc(t("common.noQr"))}'}))">`
+        : `<p class="muted">${esc(iAmPayer ? t("common.noQr") : t("quickpay.noQrSelf"))}</p>`;
+    // The app that must open is the payer's own bank, since the money leaves their account; the beneficiary is
+    // the payee. Their profile bank is the default choice, and the bank list is the only place to change it.
+    // Confirming as the payee has nothing to open — they scan, they do not pay.
+    const appBox = $("#quickpay-app");
+    appBox.innerHTML = "";
+    if (iAmPayer && minted) {
+      const nonce = ++quickpayNonce;
+      loadBanks().then((list) => {
+        if (nonce !== quickpayNonce) return;
+        const withApp = (code) => list.find((b) => b.app && b.code.toUpperCase() === String(code || "").toUpperCase());
+        const theirs = withApp(payee.bank);
+        if (!theirs) return; // the payee's bank has no deeplink: scanning is the only route
+        const choices = list.filter((b) => b.app);
+        const start = withApp(payer.bank) ?? choices.find((b) => b.app === "mb") ?? choices[0];
+        const href = (b) => bankAppUrl({ app: b.app, account: payee.account, bankApp: theirs.app, name: payee.name }, amount, memo);
+        appBox.innerHTML = `<select id="quickpay-bank" aria-label="${esc(t("quickpay.pickBank"))}">${
+          choices.map((b) => `<option value="${esc(b.code)}"${b === start ? " selected" : ""}>${esc(b.name)}</option>`).join("")
+        }</select><a class="btn btn-primary" href="${esc(href(start))}">${esc(t("quickpay.openApp"))}</a>`;
+        const sel = appBox.querySelector("select");
+        sel.onchange = () => {
+          const b = withApp(sel.value);
+          if (b) appBox.querySelector("a").href = href(b);
+        };
+      });
+    }
     $("#quickpay-hint").textContent = t(iAmPayer ? "quickpay.hint" : "quickpay.receiveHint");
     const done = $("#quickpay-done");
     done.disabled = false;
@@ -1070,6 +1204,9 @@ function paintChrome() {
     ["#logout-label", "nav.logout"],
     ["#profile-dialog .dialog-head h2", "profile.title"],
     ["#profile-name-label", "profile.name"],
+    ["#profile-bank-label", "profile.bank"],
+    ["#profile-account-label", "profile.account"],
+    ["#profile-bank-hint", "profile.bankHint"],
     ["#profile-qr-label", "profile.qr"],
     ["#profile-replace-label", "profile.replaceQr"],
     ["#profile-hint", "profile.qrHint"],
@@ -1116,13 +1253,20 @@ $("#profile-form").onsubmit = async (e) => {
   try {
     const name = f.elements.name.value.trim();
     if (!name) return alert(t("error.name"));
-    await api("/api/me", { method: "PATCH", body: JSON.stringify({ name }) });
     const file = f.elements.qr.files[0];
-    if (file) {
+    // A screenshot is the fallback, not the record: reading it first pre-fills the two fields, so a person who
+    // uploads their bank QR ends up with the account stored and a generated code, not a picture.
+    if (file) await readQrFields(file);
+    const bank = f.elements.bank.value.trim();
+    const account = f.elements.account.value.trim();
+    const saved = await api("/api/me", { method: "PATCH", body: JSON.stringify({ name, bank, account }) });
+    // A generated code needs no upload; a stored image is only kept for someone without an account.
+    if (bank && account) meQr = null;
+    else if (file) {
       const fd = new FormData();
       fd.append("file", file);
       meQr = (await api("/api/me/qr", { method: "POST", body: fd })).qr;
-    }
+    } else meQr = saved.qr;
     meName = name;
     $("#me").textContent = name;
     f.elements.qr.value = "";
@@ -1131,12 +1275,25 @@ $("#profile-form").onsubmit = async (e) => {
   } catch (err) { fail(err); }
 };
 
+$("#profile-dialog").addEventListener("change", (e) => {
+  const dlg = $("#profile-dialog");
+  if (e.target.name === "qr" && e.target.files[0]) {
+    readQrFields(e.target.files[0]).catch(() => {});
+    return;
+  }
+  // Typing the account away must drop the generated preview at once, not only after a save.
+  if (e.target.name === "bank" || e.target.name === "account" || e.target.name === "name") {
+    drawQr(dlg.elements.bank.value.trim(), dlg.elements.account.value.trim(), dlg.elements.name.value.trim());
+  }
+});
+
 $("#qr-preview").onclick = async (e) => {
   if (!e.target.dataset.dropQr) return;
   try {
     await api("/api/me/qr", { method: "DELETE" });
     meQr = null;
-    drawQr();
+    const dlg = $("#profile-dialog");
+    drawQr(dlg.elements.bank.value.trim(), dlg.elements.account.value.trim(), dlg.elements.name.value.trim());
   } catch (err) { fail(err); }
 };
 

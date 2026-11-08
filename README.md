@@ -119,8 +119,8 @@ needs no prior membership — it is how you join.
 | `GET /api/groups/:id/summary` | totals, balances, settle-up transfers |
 | `POST /api/groups/:id/bills/:billId/image` | upload this bill's image (one per bill) |
 | `POST /api/groups/:id/payments/:paymentId/image` | upload this payment's image (one per payment) |
-| `GET·PATCH /api/me` | `{email, name, qr}`; PATCH sets the display name (`qr` is a URL or `null`) |
-| `POST·DELETE /api/me/qr` | upload / remove your payment QR (multipart `file`) |
+| `GET·PATCH /api/me` | `{email, name, qr, bank, account}`; PATCH sets the display name and the VietQR bank/account (`qr` is a URL or `null`) |
+| `POST·DELETE /api/me/qr` | upload / remove your payment QR image (multipart `file`); unused when a bank account is set |
 | `POST /api/join/:token` | join a group |
 
 Limits: group and display names 1–80 and 1–60 chars, bill title 200 chars (truncated), at least one involved member,
@@ -135,13 +135,29 @@ alone at weight 1. Errors are `{error}` with `400` (invalid input),
 
 - `groups(id, name, created_by, invite_token, created_at)`, `members(group_id, email, created_at)`,
   `bills(amount VND integer, paid_by, weights JSON, image)`, `payments(from, to, amount, image)`,
-  `users(email, name, qr)`, `push_subscriptions(endpoint, email, p256dh, auth)`.
+  `users(email, name, qr, bank, account)`, `push_subscriptions(endpoint, email, p256dh, auth)`.
 - `users(email, name)` is the display name, `users.qr` the optional payment-QR key. Default is the Access identity
   name, fetched once from `/cdn-cgi/access/get-identity` (the app JWT has no name claim) and stored; an email-valued
   row is re-defaulted on the next visit. Override with `PATCH /api/me {"name"}` (the nav name). Email stays the credential.
+- `users.bank` + `users.account` (VietQR bank code and account number) are what build a settle-up QR: quick pay
+  renders `img.vietqr.io/image/<bank>-<account>-print.png?amount&addInfo&accountName` with the transfer amount and a
+  memo (`<group> · settle up`), and offers a `dl.vietqr.io/pay?app=…` button that opens the payer's bank app with the
+  form filled in. Both come from Casso's public API (`/v2/banks`, `/v2/android-app-deeplinks`), fetched by the client
+  and cached in `localStorage` for a day; with no bank/account the payee's uploaded QR image is shown instead.
+  Either field left blank clears both, since half a pair cannot form a code. Uploading a QR screenshot reads its
+  EMVCo payload (`BarcodeDetector`, so Chrome/Android and iOS 17+) and fills both fields, so the account is stored
+  rather than a picture; the profile preview and `PATCH /api/me`'s `qr` then show the derived code. A database
+  created before the fields existed needs, once by hand:
+
+  ```sql
+  ALTER TABLE users ADD COLUMN bank TEXT;
+  ALTER TABLE users ADD COLUMN account TEXT;
+  ```
 - Log out is the Access logout endpoint: `/cdn-cgi/access/logout`.
 - R2 `bills` placement is whatever the account first gave the name (the placement hint is ignored for an existing name).
-- Schema lives in `migrations/0001_init.sql`, one idempotent file covering all tables; re-running it is safe.
+- Schema lives in `migrations/0001_init.sql`, one idempotent file covering all tables; re-running it is safe for a
+  fresh database. It cannot add columns to an existing one — a deployed database needs the `ALTER TABLE` for any new
+  column (see below) run once by hand.
 - Invites: each group has an `invite_token`; the members dialog shows `/<host>/join/<token>` plus Copy and Rotate.
   `POST /api/join/:token` adds the signed-in caller and returns the group (idempotent; rotating invalidates the old token).
 - Membership is the whole permission model: any member can create, edit and delete any bill or payment, rename the
@@ -187,7 +203,10 @@ alone at weight 1. Errors are `{error}` with `400` (invalid input),
   so opening one restores the unfiltered list.
 - Quick pay: each settle-up row carries a button at its right — Pay when you are the payer, Confirm when someone owes
   you. It shows the payee's QR and the exact amount, then Done writes one payment row and repaints. The transfer is
-  `from -> to` either way, so confirming has the same effect as recording it yourself.
+  `from -> to` either way, so confirming has the same effect as recording it yourself. When the payee has a bank
+  account stored, the code is a VietQR carrying the amount and a `<group> · settle up` memo, and the payer gets an
+  "Open banking app" button that hands the same transfer to their bank's own app; the uploaded screenshot is the
+  fallback.
 - Summary: each bill adds `amount` to the payer and subtracts that person's weighted share from each participant
   (leftover đồng go one each to the heaviest weights, then declaration order, so the shares sum to the amount);
   payments shift balances; greedy min-cash-flow produces the transfer list. Each balance row also shows `spent`: the sum

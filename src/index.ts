@@ -79,18 +79,33 @@ async function isMember(env: Env, groupId: string, email: string) {
 
 async function membersOf(env: Env, groupId: string) {
   const { results } = await env.DB.prepare(
-    `SELECT m.email, COALESCE(u.name, m.email) AS name, u.qr AS qr
+    `SELECT m.email, COALESCE(u.name, m.email) AS name, u.qr AS qr, u.bank AS bank, u.account AS account
      FROM members m LEFT JOIN users u ON u.email = m.email
      WHERE m.group_id = ? ORDER BY m.created_at, m.email`,
   )
     .bind(groupId)
-    .all<{ email: string; name: string; qr: string | null }>();
-  return results.map((m) => ({ ...m, qr: qrUrl(m.qr) }));
+    .all<{ email: string; name: string; qr: string | null; bank: string | null; account: string | null }>();
+  return results.map((m) => ({ ...m, qr: personQr(m, m.name) }));
 }
 
 // R2 layout: `qrs/<email>`, `<kind>/<group-id>/<entry-id>`. Every key is produced here and nowhere else.
 const qrKey = (email: string) => `qrs/${email}`;
 const qrUrl = (key: string | null) => (key ? `/img/${key}` : null);
+// A stored account renders its own QR instead of storing an image: no upload, nothing to go stale, and the same
+// code the settle-up screen mints. A screenshot remains the fallback for anyone who has not set a bank.
+function personQr(row: { qr: string | null; bank: string | null; account: string | null }, name: string) {
+  if (!row.bank || !row.account) return qrUrl(row.qr);
+  const q = new URLSearchParams({ accountName: name });
+  return `https://img.vietqr.io/image/${encodeURIComponent(row.bank)}-${encodeURIComponent(row.account)}-print.png?${q}`;
+}
+
+const meOut = (email: string, row: { name: string; qr: string | null; bank: string | null; account: string | null } | null) => ({
+  email,
+  name: row?.name ?? email,
+  qr: personQr({ qr: row?.qr ?? null, bank: row?.bank ?? null, account: row?.account ?? null }, row?.name ?? email),
+  bank: row?.bank ?? null,
+  account: row?.account ?? null,
+});
 // One object per entry, at a key derived from the entry: no listing, no bookkeeping, nothing to sweep.
 const entryKey = (kind: "bills" | "payments", groupId: string, entryId: string) => `${kind}/${groupId}/${entryId}`;
 
@@ -327,12 +342,13 @@ on("DELETE", "/api/push/subscribe", async ({ req, env, email }) => {
 
 on("GET", "/api/me", async ({ req, env, email }) => {
   await ensureUserName(env, req, email);
-  const row = await env.DB.prepare("SELECT name, qr FROM users WHERE email = ?")
+  const row = await env.DB.prepare("SELECT name, qr, bank, account FROM users WHERE email = ?")
     .bind(email)
-    .first<{ name: string; qr: string | null }>();
-  return json({ email, name: row?.name ?? email, qr: qrUrl(row?.qr ?? null) });
+    .first<{ name: string; qr: string | null; bank: string | null; account: string | null }>();
+  return json(meOut(email, row));
 });
 
+// Bank code and account number are what let a settle-up mint a VietQR code; blank clears them.
 on("PATCH", "/api/me", async ({ req, env, email }) => {
   const body = await jsonBody(req);
   if (body.name === undefined) return error("name required (1-60 chars)");
@@ -341,8 +357,22 @@ on("PATCH", "/api/me", async ({ req, env, email }) => {
   await env.DB.prepare("INSERT INTO users (email, name) VALUES (?, ?) ON CONFLICT (email) DO UPDATE SET name = excluded.name")
     .bind(email, name)
     .run();
-  const row = await env.DB.prepare("SELECT qr FROM users WHERE email = ?").bind(email).first<{ qr: string | null }>();
-  return json({ email, name, qr: qrUrl(row?.qr ?? null) });
+  // A half-filled pair cannot form a code, so store neither. `undefined` means "not in this request" and keeps the
+  // stored value, which is what the QR-upload path and any other partial edit rely on.
+  if (body.bank !== undefined || body.account !== undefined) {
+    const cur = await env.DB.prepare("SELECT bank, account FROM users WHERE email = ?")
+      .bind(email)
+      .first<{ bank: string | null; account: string | null }>();
+    const bank = body.bank === undefined ? (cur?.bank ?? "") : typeof body.bank === "string" ? body.bank.trim().toUpperCase() : "";
+    const account = body.account === undefined ? (cur?.account ?? "") : typeof body.account === "string" ? body.account.trim() : "";
+    await env.DB.prepare("UPDATE users SET bank = ?, account = ? WHERE email = ?")
+      .bind(bank && account ? bank : null, bank && account ? account : null, email)
+      .run();
+  }
+  const row = await env.DB.prepare("SELECT name, qr, bank, account FROM users WHERE email = ?")
+    .bind(email)
+    .first<{ name: string; qr: string | null; bank: string | null; account: string | null }>();
+  return json(meOut(email, row));
 });
 
 // "Recently updated" = last bill or payment, falling back to creation.

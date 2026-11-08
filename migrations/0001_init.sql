@@ -1,8 +1,11 @@
--- Identity: one row per Access email. `qr` is the R2 key of the payment QR (`qrs/<email>`).
+-- Identity: one row per Access email. `qr` is the R2 key of the payment QR (`qrs/<email>`); `bank` and
+-- `account` are the VietQR bank code and account number a settle-up builds its QR from.
 CREATE TABLE IF NOT EXISTS users (
   email TEXT PRIMARY KEY,
   name TEXT NOT NULL,
-  qr TEXT
+  qr TEXT,
+  bank TEXT,
+  account TEXT
 );
 
 -- A group, its membership, and its shareable invite link.
