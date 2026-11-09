@@ -165,6 +165,7 @@ alone at weight 1. Errors are `{error}` with `400` (invalid input),
 
   ```sql
   ALTER TABLE groups ADD COLUMN locked_at TEXT;
+  ALTER TABLE groups ADD COLUMN settle_plan TEXT;
   ```
 - Log out is the Access logout endpoint: `/cdn-cgi/access/logout`.
 - R2 `bills` placement is whatever the account first gave the name (the placement hint is ignored for an existing name).
@@ -222,18 +223,17 @@ alone at weight 1. Errors are `{error}` with `400` (invalid input),
   no account is stored or VietQR fails to render.
 - Summary: each bill adds `amount` to the payer and subtracts that person's weighted share from each participant
   (leftover đồng go one each to the heaviest weights, then declaration order, so the shares sum to the amount);
-  payments shift balances. Each balance row also shows `spent`: the sum of that person's shares across the bills they
-  are in. It is what they consumed, not what they handed over — the payer covers the whole bill.
-- Settle-up table: a **pairwise ledger**, not a matching. Every bill charges each participant directly against the
-  person who paid it, and a payment cancels the same pair's claim, so a pair's debt only changes with entries between
-  those two people and an unrelated payment cannot rewrite other rows. Rows are sorted by owed amount then email, and
-  one pair gets one row whichever direction the debt points. Greedy min-cash-flow produces fewer transfers, but it
-  re-pairs whoever holds the largest balance, so a single payment used to rename who owes whom; that churn is why
-  stability was chosen over minimality.
-- Lock: any member can lock a group, which makes bills and payments read-only — they cannot be created, edited or
-  deleted (`409`). Nothing else changes: the settle-up table is derived and already stable, and payments recorded
-  from it (or added directly) still go through, so people can settle up while the group is locked. The client hides
-  the add and edit affordances and shows a note over the table. Unlocking restores editing.
+  payments shift balances; greedy min-cash-flow produces the transfer list. Each balance row also shows `spent`: the sum
+  of that person's shares across the bills they are in. It is what they consumed, not what they handed over — the payer
+  covers the whole bill.
+- Lock: any member can lock a group. Locking stores the settle-up table it computed at that moment in
+  `groups.settle_plan` and sets `locked_at`; the view then returns that plan with payments drawn down against it — a
+  row shrinks as it is paid and disappears when it is done, while the other rows keep their payer, payee and amount.
+  The greedy min-cash-flow reshuffles counterparties whenever one balance crosses another, so without the freeze a
+  single payment can rewrite who owes whom. While locked, bills and payments cannot be created, edited or deleted
+  (`409`), and the only accepted payment is one matching a frozen row for no more than that row still owes; quick pay
+  from the table is therefore the only write. Unlocking clears the plan and recomputes live. Balances always stay
+  live, so money that moved still shows as moved.
 - Weights: the bill form shows a stepper (− / + by one, minimum 1, no maximum) per member beside its checkbox, disabled when
   the member is unchecked. `bills.weights` is the only stored list of involved people; `participants` in the API
   response is derived from its keys, so a bill with no participants and a bill with an empty weights map are the same
