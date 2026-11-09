@@ -227,8 +227,10 @@ alone at weight 1. Errors are `{error}` with `400` (invalid input),
   of that person's shares across the bills they are in. It is what they consumed, not what they handed over — the payer
   covers the whole bill.
 - Lock: any member can lock a group. Locking stores the settle-up table it computed at that moment in
-  `groups.settle_plan` and sets `locked_at`; the view then returns that plan with payments drawn down against it — a
-  row shrinks as it is paid and disappears when it is done, while the other rows keep their payer, payee and amount.
+  `groups.settle_plan` and sets `locked_at`; the view then returns that plan with payments made *after* the freeze
+  drawn down against it — a row shrinks as it is paid and disappears when it is done, while the other rows keep their
+  payer, payee and amount. Only post-lock payments count, because the plan was computed from balances that already
+  included every earlier one; counting them again cancels each row twice, so a pre-paid pair loses its row entirely.
   The greedy min-cash-flow reshuffles counterparties whenever one balance crosses another, so without the freeze a
   single payment can rewrite who owes whom. While locked, bills and payments cannot be created, edited or deleted
   (`409`), and the only accepted payment is one matching a frozen row for no more than that row still owes; quick pay

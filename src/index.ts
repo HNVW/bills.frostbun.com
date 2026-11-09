@@ -638,16 +638,19 @@ on("POST", "/api/groups/:id/payments", async ({ req, env, email, p }) => {
   if (!allowed.has(from) || !allowed.has(to)) return error("from and to must be members of this group");
   if (from === to) return error("from and to must differ");
   // While locked the only permitted payment is one that settles a row of the frozen plan — same payer, same payee,
-  // no more than that row still has left. Anything else would move a balance the plan cannot express.
+  // no more than that row still has left. The plan already reflects every payment made before the freeze, so only
+  // those made since count against a row, or a pair that paid earlier would be refused its own remainder.
   if (await lockedAt(env, id)) {
-    const plan = parse<{ from: string; to: string; amount: number }[]>(
-      (await env.DB.prepare("SELECT settle_plan FROM groups WHERE id = ?").bind(id).first<{ settle_plan: string | null }>())?.settle_plan ?? null,
-      [],
-    );
+    const g = await env.DB.prepare("SELECT settle_plan, locked_at FROM groups WHERE id = ?")
+      .bind(id)
+      .first<{ settle_plan: string | null; locked_at: string | null }>();
+    const plan = parse<{ from: string; to: string; amount: number }[]>(g?.settle_plan ?? null, []);
     const row = plan.find((r) => r.from === from && r.to === to);
     if (!row) return error("only a settle-up payment is allowed while the group is locked", 409);
-    const { results } = await env.DB.prepare("SELECT amount FROM payments WHERE group_id = ? AND from_email = ? AND to_email = ?")
-      .bind(id, from, to)
+    const { results } = await env.DB.prepare(
+      "SELECT amount FROM payments WHERE group_id = ? AND from_email = ? AND to_email = ? AND created_at > ?",
+    )
+      .bind(id, from, to, g?.locked_at ?? "")
       .all<{ amount: number }>();
     const left = row.amount - results.reduce((sum, p) => sum + p.amount, 0);
     if (amount > left) return error("payment exceeds the settle-up amount left", 409);
@@ -710,14 +713,16 @@ on("DELETE", "/api/groups/:id/payments/:payment", async ({ env, email, p }) => {
 
 // Balances are derived from the same rows the lists show. One group load needs the group, its bills, its
 // payments and this; computing it from already-fetched rows keeps a single round trip possible.
-// `frozen` is the plan stored at lock time: while it is present the settle-up table is that plan, untouched by
-// payments, because the greedy matching reshuffles who pays whom the moment one balance crosses another.
+// `frozen` is the plan stored at lock time and `frozenAt` the moment it was cut: while it is present the settle-up
+// table is that plan, drawn down only by payments made after it, because the greedy matching reshuffles who pays
+// whom the moment one balance crosses another.
 async function summaryOf(
   env: Env,
   members: { email: string; name: string }[],
   bills: { amount: number; paidBy: string; weights: Record<string, number> | null }[],
-  payments: { amount: number; from: string; to: string }[],
+  payments: { amount: number; from: string; to: string; createdAt: string }[],
   frozen: string | null = null,
+  frozenAt: string | null = null,
 ) {
   const nameOf = new Map(members.map((m) => [m.email, m.name]));
 
@@ -741,14 +746,16 @@ async function summaryOf(
     balances.set(p.to, (balances.get(p.to) ?? 0) - p.amount);
   }
 
-  // While locked, the table is the frozen plan with payments drawn down against it: a row that has been paid
-  // disappears, the others keep their payer, payee and amount. Only a payment matching a row is accepted, so a
-  // payment can never land on a pair the plan does not name.
+  // While locked, the table is the frozen plan drawn down by what has been paid since the freeze: a row shrinks as
+  // it is paid and disappears when done, the others keep their payer, payee and amount. The plan was computed from
+  // balances that already included every earlier payment, so counting those again would cancel rows twice over —
+  // a row paid before the lock would shrink by its own amount for no reason, and vanish if it had been cleared.
   const planned = frozen === null ? null : parse<{ from: string; to: string; amount: number }[]>(frozen, []);
   let rows: { from: string; to: string; amount: number }[];
   if (planned) {
     const left = planned.map((r) => ({ ...r }));
     for (const p of payments) {
+      if (frozenAt && p.createdAt <= frozenAt) continue;
       const row = left.find((r) => r.from === p.from && r.to === p.to && r.amount > 0);
       if (row) row.amount = Math.max(0, row.amount - p.amount);
     }
@@ -794,16 +801,18 @@ on("GET", "/api/groups/:id/view", async ({ req, env, email, p }) => {
     bills,
     payments,
     // A locked group reports the plan it froze; the balances stay live because payments still move them.
-    summary: await summaryOf(env, members, bills, payments, g.settle_plan as string | null),
+    summary: await summaryOf(env, members, bills, payments, g.settle_plan as string | null, g.locked_at as string | null),
   });
 });
 
 on("GET", "/api/groups/:id/summary", async ({ env, email, p }) => {
   const [id] = p;
   if (!(await isMember(env, id, email))) return error("forbidden", 403);
-  const g = await env.DB.prepare("SELECT settle_plan FROM groups WHERE id = ?").bind(id).first<{ settle_plan: string | null }>();
+  const g = await env.DB.prepare("SELECT settle_plan, locked_at FROM groups WHERE id = ?")
+    .bind(id)
+    .first<{ settle_plan: string | null; locked_at: string | null }>();
   const members = await membersOf(env, id);
-  return json(await summaryOf(env, members, await billsOf(env, id), await paymentsOf(env, id), g?.settle_plan ?? null));
+  return json(await summaryOf(env, members, await billsOf(env, id), await paymentsOf(env, id), g?.settle_plan ?? null, g?.locked_at ?? null));
 });
 
 // --- images ---
