@@ -109,6 +109,7 @@ needs no prior membership — it is how you join.
 | `GET /api/groups/:id/view` | the group screen in one round trip: group, `inviteToken`, members, bills, payments, summary |
 | `PATCH /api/groups/:id` | rename (any member) |
 | `DELETE /api/groups/:id` | delete with all data (any member) |
+| `PATCH /api/groups/:id/lock` | `{locked}` — freeze the settle-up plan (any member); locking is the default when omitted |
 | `POST /api/groups/:id/invite` | rotate invite token (member) |
 | `POST /api/groups/:id/members` | invite by email (member) |
 | `DELETE /api/groups/:id/members/:email` | leave (your own email, the Leave button on your row), or remove anyone (any member) |
@@ -158,6 +159,13 @@ alone at weight 1. Errors are `{error}` with `400` (invalid input),
   ```sql
   ALTER TABLE users ADD COLUMN bank TEXT;
   ALTER TABLE users ADD COLUMN account TEXT;
+  ```
+
+  Locking needs the same treatment on an existing database:
+
+  ```sql
+  ALTER TABLE groups ADD COLUMN locked_at TEXT;
+  ALTER TABLE groups ADD COLUMN settle_plan TEXT;
   ```
 - Log out is the Access logout endpoint: `/cdn-cgi/access/logout`.
 - R2 `bills` placement is whatever the account first gave the name (the placement hint is ignored for an existing name).
@@ -218,6 +226,14 @@ alone at weight 1. Errors are `{error}` with `400` (invalid input),
   payments shift balances; greedy min-cash-flow produces the transfer list. Each balance row also shows `spent`: the sum
   of that person's shares across the bills they are in. It is what they consumed, not what they handed over — the payer
   covers the whole bill.
+- Lock: any member can lock a group. Locking stores the settle-up table it computed at that moment in
+  `groups.settle_plan` and sets `locked_at`; the view then returns that plan with payments drawn down against it — a
+  row shrinks as it is paid and disappears when it is done, while the other rows keep their payer, payee and amount.
+  The greedy min-cash-flow reshuffles counterparties whenever one balance crosses another, so without the freeze a
+  single payment can rewrite who owes whom. While locked, bills and payments cannot be created, edited or deleted
+  (`409`), and the only accepted payment is one matching a frozen row for no more than that row still owes; quick pay
+  from the table is therefore the only write. Unlocking clears the plan and recomputes live. Balances always stay
+  live, so money that moved still shows as moved.
 - Weights: the bill form shows a stepper (− / + by one, minimum 1, no maximum) per member beside its checkbox, disabled when
   the member is unchecked. `bills.weights` is the only stored list of involved people; `participants` in the API
   response is derived from its keys, so a bill with no participants and a bill with an empty weights map are the same

@@ -8,13 +8,16 @@ CREATE TABLE IF NOT EXISTS users (
   account TEXT
 );
 
--- A group, its membership, and its shareable invite link.
+-- A group, its membership, and its shareable invite link. `locked_at` freezes the group: the settle-up plan is
+-- stored in `settle_plan` and entries can no longer change until it is unlocked.
 CREATE TABLE IF NOT EXISTS groups (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   created_by TEXT NOT NULL,
   created_at TEXT NOT NULL,
-  invite_token TEXT NOT NULL
+  invite_token TEXT NOT NULL,
+  locked_at TEXT,
+  settle_plan TEXT
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS groups_invite ON groups (invite_token);

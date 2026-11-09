@@ -652,6 +652,8 @@ async function viewGroup(id) {
       </div>
       <div class="row head-actions">
         <button type="button" class="btn" data-members="1">${esc(t("group.members", { count: members.length }))}</button>
+        <button type="button" class="btn${group.locked ? " btn-primary" : ""}" data-lock="${group.locked ? "0" : "1"}"
+          title="${esc(t(group.locked ? "group.unlockHint" : "group.lockHint"))}">${esc(t(group.locked ? "group.unlock" : "group.lock"))}</button>
       </div>
     </div>
 
@@ -677,6 +679,7 @@ async function viewGroup(id) {
 
     <section class="summary" aria-labelledby="settle-title">
       <h2 id="settle-title">${esc(t("group.settleUp"))}</h2>
+      ${group.locked ? `<p class="muted">${esc(t("group.lockedNote"))}</p>` : ""}
       ${settlementBlock(summary.settlements)}
     </section>
 
@@ -687,14 +690,14 @@ async function viewGroup(id) {
 
     <section id="panel-bills" role="tabpanel" aria-labelledby="tab-bills">
       <div class="row" style="justify-content:flex-end;margin-bottom:var(--sp-3)">
-        <button type="button" class="btn btn-primary" data-new-bill="1">${esc(t("group.addBill"))}</button>
+        ${group.locked ? "" : `<button type="button" class="btn btn-primary" data-new-bill="1">${esc(t("group.addBill"))}</button>`}
       </div>
       ${bills.length ? billList(bills) : `<div class="empty">${esc(t("group.noBills"))}</div>`}
     </section>
 
     <section id="panel-payments" role="tabpanel" aria-labelledby="tab-payments" class="hidden">
       <div class="row" style="justify-content:flex-end;margin-bottom:var(--sp-3)">
-        <button type="button" class="btn btn-primary" data-new-pay="1">${esc(t("group.addPayment"))}</button>
+        ${group.locked ? "" : `<button type="button" class="btn btn-primary" data-new-pay="1">${esc(t("group.addPayment"))}</button>`}
       </div>
       ${payments.length ? paymentList(payments) : `<div class="empty">${esc(t("group.noPayments"))}</div>`}
     </section>
@@ -937,7 +940,7 @@ async function viewGroup(id) {
     const each = eachText(b);
     return `<article class="card card--clickable${accent}" data-details-bill="${b.id}">
       <div class="card-head">
-        <h3>${esc(b.title || t("detail.title"))}<button type="button" class="btn icon-btn card-edit" data-edit-bill="${b.id}" aria-label="${esc(t("common.edit"))}" title="${esc(t("common.edit"))}">${editIcon}</button></h3>
+        <h3>${esc(b.title || t("detail.title"))}${group.locked ? "" : `<button type="button" class="btn icon-btn card-edit" data-edit-bill="${b.id}" aria-label="${esc(t("common.edit"))}" title="${esc(t("common.edit"))}">${editIcon}</button>`}</h3>
         <span class="money">${vnd(b.amount)}</span>
       </div>
       <div class="card-meta">
@@ -969,7 +972,7 @@ async function viewGroup(id) {
   function paymentCard(p) {
     return `<article class="card card--clickable" data-details-pay="${p.id}">
       <div class="card-head">
-        <h3>${esc(who(p.from))} → ${esc(who(p.to))}<button type="button" class="btn icon-btn card-edit" data-edit-pay="${p.id}" aria-label="${esc(t("common.edit"))}" title="${esc(t("common.edit"))}">${editIcon}</button></h3>
+        <h3>${esc(who(p.from))} → ${esc(who(p.to))}${group.locked ? "" : `<button type="button" class="btn icon-btn card-edit" data-edit-pay="${p.id}" aria-label="${esc(t("common.edit"))}" title="${esc(t("common.edit"))}">${editIcon}</button>`}</h3>
         <span class="money">${vnd(p.amount)}</span>
       </div>
       <div class="card-meta"><span>${esc(date(p.createdAt))}</span></div>
@@ -1178,6 +1181,13 @@ async function viewGroup(id) {
     }
     if (d.newBill) return resetBill();
     if (d.newPay) return resetPay();
+    if (d.lock !== undefined) {
+      try {
+        await api(`/api/groups/${id}/lock`, { method: "PATCH", body: JSON.stringify({ locked: d.lock === "1" }) });
+        await render();
+      } catch (err) { fail(err); }
+      return;
+    }
     if (d.editBill) return editBill(bills.find((b) => b.id === d.editBill));
     if (d.editPay) return editPay(payments.find((p) => p.id === d.editPay));
     try {
