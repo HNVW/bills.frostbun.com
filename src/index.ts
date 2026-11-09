@@ -212,7 +212,7 @@ const groupOut = (g: Record<string, unknown>) => ({
   name: g.name,
   createdBy: g.created_by,
   createdAt: g.created_at,
-  // A group whose settlement plan is frozen: entries are read-only and only a settle-up payment is accepted.
+  // A locked group's entries are read-only; the settle-up table itself is derived and stable either way.
   locked: Boolean(g.locked_at),
   ...(g.member_count !== undefined ? { memberCount: g.member_count } : {}),
 });
@@ -450,24 +450,18 @@ on("DELETE", "/api/groups/:id", async ({ env, email, p }) => {
   return json({ ok: true });
 });
 
-// Locking freezes the settle-up plan as it reads at that moment, so the table stops reshuffling while people pay.
-// Any member may lock or unlock; the group has no owner above the rest, and a lock is reversible.
+// Locking stops entries changing while people settle up, and nothing else: the table is already stable because it
+// is a pairwise ledger, so there is no plan to freeze. Any member may lock or unlock; the group has no owner above
+// the rest, and a lock is reversible.
 on("PATCH", "/api/groups/:id/lock", async ({ req, env, email, p }) => {
   const [id] = p;
   if (!(await isMember(env, id, email))) return error("forbidden", 403);
   const body = await jsonBody(req).catch(() => ({}) as { locked?: boolean });
   const locked = body.locked !== false; // locking is the default, since that is the point of the call
-  if (!locked) {
-    await env.DB.prepare("UPDATE groups SET locked_at = NULL, settle_plan = NULL WHERE id = ?").bind(id).run();
-    return json({ id, locked: false });
-  }
-  const members = await membersOf(env, id);
-  const [bills, payments] = [await billsOf(env, id), await paymentsOf(env, id)];
-  const plan = await summaryOf(env, members, bills, payments);
-  await env.DB.prepare("UPDATE groups SET locked_at = ?, settle_plan = ? WHERE id = ?")
-    .bind(new Date().toISOString(), JSON.stringify(plan.settlements), id)
+  await env.DB.prepare("UPDATE groups SET locked_at = ? WHERE id = ?")
+    .bind(locked ? new Date().toISOString() : null, id)
     .run();
-  return json({ id, locked: true, settlements: plan.settlements });
+  return json({ id, locked });
 });
 
 async function removeGroupData(env: Env, id: string) {
@@ -637,21 +631,6 @@ on("POST", "/api/groups/:id/payments", async ({ req, env, email, p }) => {
   const to = normEmail(body.to);
   if (!allowed.has(from) || !allowed.has(to)) return error("from and to must be members of this group");
   if (from === to) return error("from and to must differ");
-  // While locked the only permitted payment is one that settles a row of the frozen plan — same payer, same payee,
-  // no more than that row still has left. Anything else would move a balance the plan cannot express.
-  if (await lockedAt(env, id)) {
-    const plan = parse<{ from: string; to: string; amount: number }[]>(
-      (await env.DB.prepare("SELECT settle_plan FROM groups WHERE id = ?").bind(id).first<{ settle_plan: string | null }>())?.settle_plan ?? null,
-      [],
-    );
-    const row = plan.find((r) => r.from === from && r.to === to);
-    if (!row) return error("only a settle-up payment is allowed while the group is locked", 409);
-    const { results } = await env.DB.prepare("SELECT amount FROM payments WHERE group_id = ? AND from_email = ? AND to_email = ?")
-      .bind(id, from, to)
-      .all<{ amount: number }>();
-    const left = row.amount - results.reduce((sum, p) => sum + p.amount, 0);
-    if (amount > left) return error("payment exceeds the settle-up amount left", 409);
-  }
   const payId = body.id === undefined ? crypto.randomUUID() : asId(body.id);
   if (!payId) return error("id must be a UUID");
   if (await env.DB.prepare("SELECT 1 AS ok FROM payments WHERE id = ?").bind(payId).first()) return error("id already used", 409);
@@ -710,14 +689,16 @@ on("DELETE", "/api/groups/:id/payments/:payment", async ({ env, email, p }) => {
 
 // Balances are derived from the same rows the lists show. One group load needs the group, its bills, its
 // payments and this; computing it from already-fetched rows keeps a single round trip possible.
-// `frozen` is the plan stored at lock time: while it is present the settle-up table is that plan, untouched by
-// payments, because the greedy matching reshuffles who pays whom the moment one balance crosses another.
+//
+// The transfer list is a pairwise ledger, not a matching: every bill charges each participant directly to the
+// person who paid it, so a pair's debt only ever grows or shrinks with entries between those two people. Greedy
+// min-cash-flow minimises the number of transfers, but it re-pairs whoever happens to have the largest balance, so
+// an unrelated payment rewrites the whole table. Ordering by owed amount, then email, keeps the rows in place too.
 async function summaryOf(
   env: Env,
   members: { email: string; name: string }[],
   bills: { amount: number; paidBy: string; weights: Record<string, number> | null }[],
   payments: { amount: number; from: string; to: string }[],
-  frozen: string | null = null,
 ) {
   const nameOf = new Map(members.map((m) => [m.email, m.name]));
 
@@ -725,6 +706,17 @@ async function summaryOf(
   // What each person's share adds up to across the bills they are in — the money they consumed, which is
   // not what they handed over (the payer covers the whole bill).
   const spent = new Map<string, number>(members.map((m) => [m.email, 0]));
+  // Positive = the first person owes the second. A bill only ever charges its participants against its payer.
+  const owed = new Map<string, number>();
+  const bump = (from: string, to: string, amount: number) => {
+    if (from === to || !amount) return;
+    const [lo, hi] = from < to ? [from, to] : [to, from];
+    const key = `${lo}\u0000${hi}`;
+    // Stored as the lower email's net claim, so one row per pair whichever direction the debt points.
+    const sign = from === lo ? -1 : 1;
+    owed.set(key, (owed.get(key) ?? 0) + sign * amount);
+  };
+
   let totalSpent = 0;
   for (const b of bills) {
     totalSpent += b.amount;
@@ -734,42 +726,26 @@ async function summaryOf(
     for (const [person, share] of split(b.amount, weights)) {
       balances.set(person, (balances.get(person) ?? 0) - share);
       spent.set(person, (spent.get(person) ?? 0) + share);
+      bump(person, b.paidBy, share);
     }
   }
   for (const p of payments) {
     balances.set(p.from, (balances.get(p.from) ?? 0) + p.amount);
     balances.set(p.to, (balances.get(p.to) ?? 0) - p.amount);
+    // A payment settles debt: it cancels the same pair's claim rather than acting as a bill.
+    bump(p.to, p.from, p.amount);
   }
 
-  // While locked, the table is the frozen plan with payments drawn down against it: a row that has been paid
-  // disappears, the others keep their payer, payee and amount. Only a payment matching a row is accepted, so a
-  // payment can never land on a pair the plan does not name.
-  const planned = frozen === null ? null : parse<{ from: string; to: string; amount: number }[]>(frozen, []);
-  let rows: { from: string; to: string; amount: number }[];
-  if (planned) {
-    const left = planned.map((r) => ({ ...r }));
-    for (const p of payments) {
-      const row = left.find((r) => r.from === p.from && r.to === p.to && r.amount > 0);
-      if (row) row.amount = Math.max(0, row.amount - p.amount);
-    }
-    rows = left.filter((r) => r.amount > 0);
-  } else {
-    const debtors = [...balances].filter(([, v]) => v < 0).map(([who, v]) => ({ who, v: -v })).sort((a, b) => b.v - a.v);
-    const creditors = [...balances].filter(([, v]) => v > 0).map(([who, v]) => ({ who, v })).sort((a, b) => b.v - a.v);
-    rows = [];
-    for (let i = 0, j = 0; i < debtors.length && j < creditors.length; ) {
-      const amount = Math.min(debtors[i].v, creditors[j].v);
-      if (amount > 0) rows.push({ from: debtors[i].who, to: creditors[j].who, amount });
-      debtors[i].v -= amount;
-      creditors[j].v -= amount;
-      if (!debtors[i].v) i++;
-      if (!creditors[j].v) j++;
-    }
-  }
+  const rows = [...owed]
+    .filter(([, v]) => v !== 0)
+    .map(([key, v]) => {
+      const [lo, hi] = key.split("\u0000");
+      return v < 0 ? { from: lo, to: hi, amount: -v } : { from: hi, to: lo, amount: v };
+    })
+    .sort((a, b) => b.amount - a.amount || a.from.localeCompare(b.from) || a.to.localeCompare(b.to));
 
   return {
     totalSpent,
-    locked: planned !== null,
     balances: [...balances].map(([m, v]) => ({ email: m, name: nameOf.get(m) ?? m, balance: v, spent: spent.get(m) ?? 0 })),
     settlements: rows.map((t) => ({ ...t, fromName: nameOf.get(t.from) ?? t.from, toName: nameOf.get(t.to) ?? t.to })),
   };
@@ -793,17 +769,15 @@ on("GET", "/api/groups/:id/view", async ({ req, env, email, p }) => {
     myName: (await displayName(env, email)),
     bills,
     payments,
-    // A locked group reports the plan it froze; the balances stay live because payments still move them.
-    summary: await summaryOf(env, members, bills, payments, g.settle_plan as string | null),
+    summary: await summaryOf(env, members, bills, payments),
   });
 });
 
 on("GET", "/api/groups/:id/summary", async ({ env, email, p }) => {
   const [id] = p;
   if (!(await isMember(env, id, email))) return error("forbidden", 403);
-  const g = await env.DB.prepare("SELECT settle_plan FROM groups WHERE id = ?").bind(id).first<{ settle_plan: string | null }>();
   const members = await membersOf(env, id);
-  return json(await summaryOf(env, members, await billsOf(env, id), await paymentsOf(env, id), g?.settle_plan ?? null));
+  return json(await summaryOf(env, members, await billsOf(env, id), await paymentsOf(env, id)));
 });
 
 // --- images ---
